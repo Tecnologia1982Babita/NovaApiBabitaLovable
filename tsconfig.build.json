@@ -1,0 +1,13 @@
+{
+  "extends": "./tsconfig.json",
+  "exclude": [
+    "node_modules",
+    "test",
+    "dist",
+    "**/*spec.ts",
+    "src/modules/app",
+    "src/modules/auth/auth.service.ts",
+    "src/modules/auth/auth.controller.ts",
+    "src/modules/auth/auth.module.ts"
+  ]
+}
