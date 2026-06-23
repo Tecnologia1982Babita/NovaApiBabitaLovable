@@ -86,7 +86,8 @@ export class ListasService {
         ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
       ) x
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
-      ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC`;
+      ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC
+      LIMIT 30`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
