@@ -66,6 +66,7 @@ function createSwaggerConfig() {
     .addTag('Tipos de Chamados')
     .addTag('')
     .addTag('Listas')
+    .addTag('Clientes')
     .build();
 }
 

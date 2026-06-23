@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from 'src/services/prisma.module';
 import { FashionstarsModule } from '../routes/fashionstars/fashionstars.module';
+import { ClientesModule } from '../routes/clientes/clientes.module';
 import { ListasModule } from '../routes/listas/listas.module';
 import { MetaVendedorasModule } from '../routes/metaVendedoras/metaVendedoras.module';
 import { UsuariosModule } from '../routes/usuarios/usuarios.module';
@@ -17,6 +18,7 @@ import { RootController } from './root.controller';
     FashionstarsModule,
     MetaVendedorasModule,
     ListasModule,
+    ClientesModule,
   ],
   controllers: [RootController],
 })
