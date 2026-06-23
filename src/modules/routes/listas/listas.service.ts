@@ -68,25 +68,39 @@ export class ListasService {
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
-  /** Top 30: consome a tabela topfashiostar (ranking oficial). 1 linha por matriz. */
+  /** Top 30 revendedoras (matriz). Reproduz a regra oficial da topfashiostar:
+   *  vendas (erp_pedidos) - trocas (erp_trocas) desde 01/04/2026, por matriz.
+   *  Validado batendo identico aos valores da tabela topfashiostar. Sempre 30. */
   async top30(f: FiltroListaDto = {}) {
     const params: any[] = [];
-    const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
+    let fVend = '';
+    if (f.vendedora != null) {
+      params.push(f.vendedora);
+      fVend = `AND regexp_replace(doctoclie,'[^0-9]','','g') IN
+               (SELECT regexp_replace(doctoclie,'[^0-9]','','g') FROM vendedora_proprietaria WHERE codigovend = $${params.length})`;
+    }
     const sql = `
-      SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
-             ROUND(x.valor_venda, 2) AS valor_venda
+      SELECT (row_number() OVER (ORDER BY agg.total DESC))::int AS posicao,
+             agg.cpf_matriz AS cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
+             ROUND(agg.total, 2) AS valor_venda
       FROM (
-        SELECT DISTINCT ON (COALESCE(self.cpf_matriz, 'c' || t.codparc))
-               t.posicao, t.valor_venda,
-               COALESCE(self.cpf_matriz, lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')) AS cpfcnpj
-        FROM topfashiostar t
-        LEFT JOIN adfashionstars fs ON fs.codparc = t.codparc
-        LEFT JOIN ${this.CLI} self ON self.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
-        WHERE 1=1 ${fVend}
-        ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
-      ) x
-      LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
-      ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC`;
+        SELECT COALESCE(map.cpf_matriz, mov.doc) AS cpf_matriz, SUM(mov.valor) AS total
+        FROM (
+          SELECT regexp_replace(doctoclie,'[^0-9]','','g') AS doc, COALESCE(totalgeral,0) AS valor
+          FROM erp_pedidos
+          WHERE cancelado IS DISTINCT FROM 'S' AND data >= DATE '2026-04-01' ${fVend}
+          UNION ALL
+          SELECT regexp_replace(doctoclie,'[^0-9]','','g') AS doc, -COALESCE(totalgeral,0) AS valor
+          FROM erp_trocas
+          WHERE COALESCE(cancelado,'N') = 'N' AND data >= DATE '2026-04-01' ${fVend}
+        ) mov
+        LEFT JOIN ${this.CLI} map ON map.cpf14 = mov.doc
+        GROUP BY 1
+      ) agg
+      LEFT JOIN ${this.CLI} cli ON cli.cpf14 = agg.cpf_matriz
+      WHERE agg.total > 0
+      ORDER BY agg.total DESC
+      LIMIT 30`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
