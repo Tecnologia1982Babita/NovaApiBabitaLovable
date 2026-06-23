@@ -68,32 +68,25 @@ export class ListasService {
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
-  /** Top 30 revendedoras por faturamento do mes (por matriz; vinculados somados). Sempre 30. */
+  /** Top 30: consome a tabela topfashiostar (ranking oficial). 1 linha por matriz. */
   async top30(f: FiltroListaDto = {}) {
     const params: any[] = [];
-    let fVend = '';
-    if (f.vendedora != null) {
-      params.push(f.vendedora);
-      fVend = `AND regexp_replace(p.doctoclie,'[^0-9]','','g') IN
-               (SELECT regexp_replace(doctoclie,'[^0-9]','','g') FROM vendedora_proprietaria WHERE codigovend = $${params.length})`;
-    }
+    const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
     const sql = `
-      SELECT (row_number() OVER (ORDER BY agg.total DESC))::int AS posicao,
-             agg.cpf_matriz AS cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
-             ROUND(agg.total,2) AS valor_venda
+      SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
+             ROUND(x.valor_venda, 2) AS valor_venda
       FROM (
-        SELECT COALESCE(map.cpf_matriz, regexp_replace(p.doctoclie,'[^0-9]','','g')) AS cpf_matriz,
-               SUM(COALESCE(p.totalgeral,0)) AS total
-        FROM erp_pedidos p
-        LEFT JOIN ${this.CLI} map ON map.cpf14 = regexp_replace(p.doctoclie,'[^0-9]','','g')
-        WHERE p.cancelado IS DISTINCT FROM 'S'
-          AND p.data >= date_trunc('month',CURRENT_DATE)
-          ${fVend}
-        GROUP BY 1
-      ) agg
-      LEFT JOIN ${this.CLI} cli ON cli.cpf14 = agg.cpf_matriz
-      ORDER BY agg.total DESC
-      LIMIT 30`;
+        SELECT DISTINCT ON (COALESCE(self.cpf_matriz, 'c' || t.codparc))
+               t.posicao, t.valor_venda,
+               COALESCE(self.cpf_matriz, lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')) AS cpfcnpj
+        FROM topfashiostar t
+        LEFT JOIN adfashionstars fs ON fs.codparc = t.codparc
+        LEFT JOIN ${this.CLI} self ON self.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
+        WHERE 1=1 ${fVend}
+        ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
+      ) x
+      LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
+      ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
