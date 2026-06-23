@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsDateString, IsInt, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, Matches } from 'class-validator';
 
 export class ClienteComprasDto {
   @ApiProperty({ description: 'CPF/CNPJ do cliente (so digitos ou formatado).', example: '06472333637' })
@@ -7,12 +7,17 @@ export class ClienteComprasDto {
   @IsNotEmpty()
   cpf: string;
 
-  @ApiPropertyOptional({ description: 'Mes especifico no formato YYYY-MM. Tem prioridade sobre "meses".', example: '2026-05' })
+  @ApiPropertyOptional({ description: 'Agrupamento: "mes" (default) ou "dia".', enum: ['mes', 'dia'], example: 'mes' })
+  @IsOptional()
+  @IsIn(['mes', 'dia'])
+  granularidade?: 'mes' | 'dia';
+
+  @ApiPropertyOptional({ description: 'Mes especifico YYYY-MM. Prioridade sobre "meses".', example: '2026-05' })
   @IsOptional()
   @Matches(/^\d{4}-\d{2}$/, { message: 'mes deve estar no formato YYYY-MM' })
   mes?: string;
 
-  @ApiPropertyOptional({ description: 'Inicio do periodo (YYYY-MM-DD). Se informado, usa periodo dataIni..dataFim.', example: '2026-01-01' })
+  @ApiPropertyOptional({ description: 'Inicio do periodo (YYYY-MM-DD).', example: '2026-01-01' })
   @IsOptional()
   @IsDateString()
   dataIni?: string;
@@ -22,7 +27,7 @@ export class ClienteComprasDto {
   @IsDateString()
   dataFim?: string;
 
-  @ApiPropertyOptional({ description: 'Qtos meses retroativos (inclui o atual). Usado se nao informar mes/periodo. Default 12.', example: 12 })
+  @ApiPropertyOptional({ description: 'Qtos meses retroativos (inclui o atual). Default 12.', example: 12 })
   @IsOptional()
   @IsInt()
   meses?: number;

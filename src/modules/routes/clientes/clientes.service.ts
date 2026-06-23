@@ -7,9 +7,10 @@ export class ClientesService {
   constructor(private readonly prisma: PrismaService) {}
 
   /**
-   * Compra por mes do cliente (liquido = erp_pedidos - erp_trocas), por DATE_TRUNC('month',data),
-   * somando os cadastros vinculados (matriz) via erp_clientes_real.
+   * Compra do cliente (liquido = erp_pedidos - erp_trocas), somando os cadastros vinculados (matriz).
+   * granularidade: "mes" (default, DATE_TRUNC month) ou "dia" (por data).
    * Janela: periodo (dataIni/dataFim) > mes (YYYY-MM) > ultimos `meses` (default 12).
+   * Uma unica query (sem chamadas extras).
    */
   async comprasPorMes(dto: ClienteComprasDto) {
     const params: any[] = [dto.cpf]; // $1
@@ -30,6 +31,13 @@ export class ClientesService {
       dateCond = `data >= date_trunc('month', CURRENT_DATE) - make_interval(months => $${params.length}::int - 1)`;
     }
 
+    // granularidade validada no DTO (mes|dia) -> string controlada, sem injecao
+    const porDia = dto.granularidade === 'dia';
+    const bucket = porDia ? `data::date` : `DATE_TRUNC('month', data)::date`;
+    const label = porDia
+      ? `to_char(ref,'YYYY-MM-DD') AS dia, ref AS data_ref`
+      : `to_char(ref,'YYYY-MM') AS mes, ref AS mes_ref`;
+
     const sql = `
       WITH alvo AS (
         SELECT clientes_cpf_cnpj_principal AS principal
@@ -44,22 +52,22 @@ export class ClientesService {
         SELECT lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
       ),
       mov AS (
-        SELECT DATE_TRUNC('month', data)::date AS mes_ref, COALESCE(totalgeral,0) AS valor
+        SELECT ${bucket} AS ref, COALESCE(totalgeral,0) AS valor
         FROM erp_pedidos
         WHERE doctoclie IN (SELECT cpf FROM cadastros)
           AND cancelado IS DISTINCT FROM 'S'
           AND ${dateCond}
         UNION ALL
-        SELECT DATE_TRUNC('month', data)::date, -COALESCE(totalgeral,0)
+        SELECT ${bucket}, -COALESCE(totalgeral,0)
         FROM erp_trocas
         WHERE doctoclie IN (SELECT cpf FROM cadastros)
           AND COALESCE(cancelado,'N') = 'N'
           AND ${dateCond}
       )
-      SELECT to_char(mes_ref,'YYYY-MM') AS mes, mes_ref, ROUND(SUM(valor),2) AS valor_total
+      SELECT ${label}, ROUND(SUM(valor),2) AS valor_total
       FROM mov
-      GROUP BY mes_ref
-      ORDER BY mes_ref`;
+      GROUP BY ref
+      ORDER BY ref`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 }
