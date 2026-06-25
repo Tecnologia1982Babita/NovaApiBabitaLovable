@@ -76,7 +76,6 @@ export class ListasService {
   /** Top 30: consome a tabela topfashiostar (ranking oficial). 1 linha por matriz. */
   async top30(f: FiltroListaDto = {}) {
     const params: any[] = [];
-    const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
     const sql = `
       SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
              vend.codigovend, vend.ven_nome AS vendedora_nome,
@@ -88,7 +87,7 @@ export class ListasService {
         FROM topfashiostar t
         LEFT JOIN adfashionstars fs ON fs.codparc = t.codparc
         LEFT JOIN ${this.CLI} self ON self.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
-        WHERE 1=1 ${fVend}
+        WHERE 1=1
         ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
       ) x
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
