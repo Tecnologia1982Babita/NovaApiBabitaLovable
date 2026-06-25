@@ -73,27 +73,35 @@ export class ListasService {
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
-  /** Top 30: consome a tabela topfashiostar (ranking oficial). 1 linha por matriz. */
+  /** Top 30 da Babita (ranking geral). Filtro vendedora opcional mantem a posicao ORIGINAL. */
   async top30(f: FiltroListaDto = {}) {
     const params: any[] = [];
+    let outerFilter = '';
+    if (f.vendedora != null) {
+      params.push(f.vendedora);
+      outerFilter = `WHERE top.codigovend = $${params.length}`;
+    }
     const sql = `
-      SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
-             vend.codigovend, vend.ven_nome AS vendedora_nome,
-             ROUND(x.valor_venda, 2) AS valor_venda
-      FROM (
-        SELECT DISTINCT ON (COALESCE(self.cpf_matriz, 'c' || t.codparc))
-               t.posicao, t.valor_venda,
-               COALESCE(self.cpf_matriz, lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')) AS cpfcnpj
-        FROM topfashiostar t
-        LEFT JOIN adfashionstars fs ON fs.codparc = t.codparc
-        LEFT JOIN ${this.CLI} self ON self.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
-        WHERE 1=1
-        ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
-      ) x
-      LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
-      LEFT JOIN ${this.VEND} vend ON vend.doc14 = x.cpfcnpj
-      ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC
-      LIMIT 30`;
+      SELECT * FROM (
+        SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
+               vend.codigovend, vend.ven_nome AS vendedora_nome,
+               ROUND(x.valor_venda, 2) AS valor_venda
+        FROM (
+          SELECT DISTINCT ON (COALESCE(self.cpf_matriz, 'c' || t.codparc))
+                 t.posicao, t.valor_venda,
+                 COALESCE(self.cpf_matriz, lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')) AS cpfcnpj
+          FROM topfashiostar t
+          LEFT JOIN adfashionstars fs ON fs.codparc = t.codparc
+          LEFT JOIN ${this.CLI} self ON self.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
+          ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
+        ) x
+        LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
+        LEFT JOIN ${this.VEND} vend ON vend.doc14 = x.cpfcnpj
+        ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC
+        LIMIT 30
+      ) top
+      ${outerFilter}
+      ORDER BY top.posicao ASC NULLS LAST, top.valor_venda DESC`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
