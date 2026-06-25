@@ -27,6 +27,11 @@ export class ClienteComprasDto {
   @IsDateString()
   dataFim?: string;
 
+  @ApiPropertyOptional({ description: 'Filtra para os cadastros da vendedora (codigovend). Omitido = todos.', example: 55 })
+  @IsOptional()
+  @IsInt()
+  vendedora?: number;
+
   @ApiPropertyOptional({ description: 'Qtos meses retroativos (inclui o atual). Default 12.', example: 12 })
   @IsOptional()
   @IsInt()

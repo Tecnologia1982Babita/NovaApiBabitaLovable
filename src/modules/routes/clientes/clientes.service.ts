@@ -6,16 +6,24 @@ import { ClienteComprasDto } from './dto/cliente-compras.dto';
 export class ClientesService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // cpf(14) -> vendedora dona (mais recente).
+  private readonly VEND = `(
+    SELECT DISTINCT ON (doc14) doc14, codigovend, ven_nome FROM (
+      SELECT regexp_replace(vp.doctoclie,'[^0-9]','','g') AS doc14,
+             vp.codigovend, btrim(v.ven_nome) AS ven_nome, vp.dat_inc
+      FROM vendedora_proprietaria vp
+      LEFT JOIN erp_vendedores v ON v.ven_numero = vp.codigovend
+    ) z ORDER BY doc14, dat_inc DESC NULLS LAST
+  )`;
+
   /**
    * Compra do cliente (liquido = erp_pedidos - erp_trocas), somando os cadastros vinculados (matriz).
-   * granularidade: "mes" (default, DATE_TRUNC month) ou "dia" (por data).
-   * Janela: periodo (dataIni/dataFim) > mes (YYYY-MM) > ultimos `meses` (default 12).
-   * Uma unica query (sem chamadas extras).
+   * granularidade: "mes" (default) ou "dia". Janela: periodo > mes > ultimos `meses` (12).
+   * Mostra a vendedora dona; filtro opcional `vendedora` restringe aos cadastros dela.
    */
   async comprasPorMes(dto: ClienteComprasDto) {
     const params: any[] = [dto.cpf]; // $1
     let dateCond: string;
-
     if (dto.dataIni || dto.dataFim) {
       const conds: string[] = [];
       if (dto.dataIni) { params.push(dto.dataIni); conds.push(`data >= $${params.length}::date`); }
@@ -31,7 +39,15 @@ export class ClientesService {
       dateCond = `data >= date_trunc('month', CURRENT_DATE) - make_interval(months => $${params.length}::int - 1)`;
     }
 
-    // granularidade validada no DTO (mes|dia) -> string controlada, sem injecao
+    let fVendCad = '';
+    let unirInput = `UNION SELECT lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')`;
+    if (dto.vendedora != null) {
+      params.push(dto.vendedora);
+      fVendCad = `AND regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g') IN
+                  (SELECT regexp_replace(doctoclie,'[^0-9]','','g') FROM vendedora_proprietaria WHERE codigovend = $${params.length})`;
+      unirInput = ''; // com filtro de vendedora nao forca o cpf de entrada
+    }
+
     const porDia = dto.granularidade === 'dia';
     const bucket = porDia ? `data::date` : `DATE_TRUNC('month', data)::date`;
     const label = porDia
@@ -45,11 +61,18 @@ export class ClientesService {
         WHERE regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g') = lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
         LIMIT 1
       ),
+      matrizcpf AS (
+        SELECT lpad(regexp_replace(COALESCE((SELECT principal FROM alvo), $1),'[^0-9]','','g'),14,'0') AS cpf_matriz
+      ),
+      vendinfo AS (
+        SELECT codigovend, ven_nome FROM ${this.VEND} v
+        WHERE v.doc14 = (SELECT cpf_matriz FROM matrizcpf) LIMIT 1
+      ),
       cadastros AS (
         SELECT clientes_cpf_cnpj AS cpf FROM erp_clientes_real
         WHERE clientes_cpf_cnpj_principal = (SELECT principal FROM alvo)
-        UNION
-        SELECT lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
+          ${fVendCad}
+        ${unirInput}
       ),
       mov AS (
         SELECT ${bucket} AS ref, COALESCE(totalgeral,0) AS valor
@@ -64,7 +87,9 @@ export class ClientesService {
           AND COALESCE(cancelado,'N') = 'N'
           AND ${dateCond}
       )
-      SELECT ${label}, ROUND(SUM(valor),2) AS valor_total
+      SELECT ${label}, ROUND(SUM(valor),2) AS valor_total,
+             (SELECT codigovend FROM vendinfo) AS codigovend,
+             (SELECT ven_nome FROM vendinfo) AS vendedora_nome
       FROM mov
       GROUP BY ref
       ORDER BY ref`;

@@ -3,22 +3,15 @@ import { PrismaService } from 'src/services/prisma.service';
 import { FiltroListaDto, SuperOfensivaFiltroDto } from './dto/listas-filtro.dto';
 
 /**
- * Listas Importantes das vendedoras (Liga / Premiacoes + Desativacao + Aniversariantes).
- * Selects validados read-only contra bd_think (jun/2026).
- *
- * Matriz x vinculado (erp_clientes_real): matriz = clientes_id = clientes_id_principal
- * (ou principal nulo); vinculado = ids diferentes. cpf da matriz = clientes_cpf_cnpj_principal.
- *
- * Perf: lookup de cliente (CLI) sai de erp_clientes_real em UMA varredura (DISTINCT ON cpf14)
- * e entra como hash join (evita subquery correlacionada por linha).
- *
- * Pendencia: filtro empresa MG/ML descartado. Numeric volta string (front faz parseFloat).
+ * Listas Importantes das vendedoras. Selects validados read-only contra bd_think (jun/2026).
+ * Matriz = clientes_id = clientes_id_principal (ou principal nulo); cpf da matriz = clientes_cpf_cnpj_principal.
+ * Lookups por hash join unico (CLI/VEND), sem subquery correlacionada por linha.
  */
 @Injectable()
 export class ListasService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Por cpf/cnpj do cliente (14 digitos): is_matriz, cpf da matriz, nome e telefone proprios.
+  // cpf(14) -> is_matriz, cpf_matriz, nome, telefone.
   private readonly CLI = `(
     SELECT DISTINCT ON (cpf14) cpf14, is_matriz, cpf_matriz, nome, telefone FROM (
       SELECT
@@ -29,6 +22,16 @@ export class ListasService {
         NULLIF(btrim(coalesce(clientes_ddd1,'')) || ' ' || btrim(coalesce(clientes_telefone1,'')), '') AS telefone
       FROM erp_clientes_real
     ) z ORDER BY cpf14
+  )`;
+
+  // cpf(14) -> vendedora dona (mais recente). Leve: so vendedora_proprietaria + erp_vendedores.
+  private readonly VEND = `(
+    SELECT DISTINCT ON (doc14) doc14, codigovend, ven_nome FROM (
+      SELECT regexp_replace(vp.doctoclie,'[^0-9]','','g') AS doc14,
+             vp.codigovend, btrim(v.ven_nome) AS ven_nome, vp.dat_inc
+      FROM vendedora_proprietaria vp
+      LEFT JOIN erp_vendedores v ON v.ven_numero = vp.codigovend
+    ) z ORDER BY doc14, dat_inc DESC NULLS LAST
   )`;
 
   private filtroVendedoraPorFs(vendedora: number | undefined, params: any[]): string {
@@ -44,6 +47,7 @@ export class ListasService {
     const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
     const sql = `
       SELECT c.codparc, btrim(fs.nomeparc) AS nome, fs.cpfcnpj, cli.telefone,
+             vend.codigovend, vend.ven_nome AS vendedora_nome,
              ROUND(c.valor_total,2) AS realizado,
              LEAST(20, FLOOR(c.valor_total / m.valor_estrela))::int        AS estrelas,
              (20 - LEAST(20, FLOOR(c.valor_total / m.valor_estrela)))::int AS faltam_estrelas,
@@ -61,6 +65,7 @@ export class ListasService {
       JOIN corridas_ligafashion_meta m ON m.mesinicial = c.mesinicial AND m.mesfinal = c.mesfinal
       LEFT JOIN adfashionstars fs ON fs.codparc = c.codparc
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
+      LEFT JOIN ${this.VEND} vend ON vend.doc14 = cli.cpf_matriz
       WHERE m.mesinicial <= CURRENT_DATE AND m.mesfinal >= CURRENT_DATE
         AND NOT EXISTS (SELECT 1 FROM corridas_ligafashion_premio p WHERE p.codparc = c.codparc)
         ${fVend}
@@ -74,6 +79,7 @@ export class ListasService {
     const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
     const sql = `
       SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
+             vend.codigovend, vend.ven_nome AS vendedora_nome,
              ROUND(x.valor_venda, 2) AS valor_venda
       FROM (
         SELECT DISTINCT ON (COALESCE(self.cpf_matriz, 'c' || t.codparc))
@@ -86,6 +92,7 @@ export class ListasService {
         ORDER BY COALESCE(self.cpf_matriz, 'c' || t.codparc), (self.is_matriz IS NOT TRUE), t.posicao ASC NULLS LAST
       ) x
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
+      LEFT JOIN ${this.VEND} vend ON vend.doc14 = x.cpfcnpj
       ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC
       LIMIT 30`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
@@ -101,7 +108,8 @@ export class ListasService {
     }
     const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
     const sql = `
-      SELECT s.codparc, btrim(fs.nomeparc) AS nome, fs.cpfcnpj, cli.telefone, s.meses_seguidos
+      SELECT s.codparc, btrim(fs.nomeparc) AS nome, fs.cpfcnpj, cli.telefone,
+             vend.codigovend, vend.ven_nome AS vendedora_nome, s.meses_seguidos
       FROM (
         SELECT codparc, count(*)::int AS meses_seguidos, max(rnk) AS last_rnk
         FROM (
@@ -119,6 +127,7 @@ export class ListasService {
       ) s
       LEFT JOIN adfashionstars fs ON fs.codparc = s.codparc
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = lpad(regexp_replace(fs.cpfcnpj,'[^0-9]','','g'),14,'0')
+      LEFT JOIN ${this.VEND} vend ON vend.doc14 = cli.cpf_matriz
       WHERE s.last_rnk = (SELECT count(*) FROM ofensiva_ligafashion_meta WHERE mes_ref <= date_trunc('month', CURRENT_DATE))
         ${fEtapa}
         ${fVend}
@@ -126,7 +135,7 @@ export class ListasService {
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
-  /** Aniversariantes do mes, 1 linha por MATRIZ (vinculados agrupados por cpf principal). */
+  /** Aniversariantes do mes, 1 linha por MATRIZ. */
   async aniversariantes(f: FiltroListaDto = {}) {
     const params: any[] = [];
     let fVend = '';
@@ -136,14 +145,15 @@ export class ListasService {
                (SELECT regexp_replace(doctoclie,'[^0-9]','','g') FROM vendedora_proprietaria WHERE codigovend = $${params.length})`;
     }
     const sql = `
-      SELECT cpf_matriz, btrim(nome_matriz) AS nome, nascimento, true AS is_matriz,
-             EXTRACT(DAY FROM nascimento)::int AS dia_aniv,
-             (EXTRACT(MONTH FROM CURRENT_DATE) = EXTRACT(MONTH FROM nascimento)) AS mes_aniversario,
-             (CASE WHEN EXTRACT(MONTH FROM CURRENT_DATE) <= EXTRACT(MONTH FROM nascimento)
-                   THEN make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int,     EXTRACT(MONTH FROM nascimento)::int, 1) - CURRENT_DATE
-                   ELSE make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int + 1, EXTRACT(MONTH FROM nascimento)::int, 1) - CURRENT_DATE
+      SELECT m.cpf_matriz, btrim(m.nome_matriz) AS nome, m.nascimento, true AS is_matriz,
+             vend.codigovend, vend.ven_nome AS vendedora_nome,
+             EXTRACT(DAY FROM m.nascimento)::int AS dia_aniv,
+             (EXTRACT(MONTH FROM CURRENT_DATE) = EXTRACT(MONTH FROM m.nascimento)) AS mes_aniversario,
+             (CASE WHEN EXTRACT(MONTH FROM CURRENT_DATE) <= EXTRACT(MONTH FROM m.nascimento)
+                   THEN make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int,     EXTRACT(MONTH FROM m.nascimento)::int, 1) - CURRENT_DATE
+                   ELSE make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int + 1, EXTRACT(MONTH FROM m.nascimento)::int, 1) - CURRENT_DATE
               END) AS dias_para_mes_aniversario,
-             NULLIF(btrim(coalesce(ddd,'')) || ' ' || btrim(coalesce(fone,'')), '') AS telefone
+             NULLIF(btrim(coalesce(m.ddd,'')) || ' ' || btrim(coalesce(m.fone,'')), '') AS telefone
       FROM (
         SELECT DISTINCT ON (clientes_cpf_cnpj_principal)
                clientes_cpf_cnpj_principal   AS cpf_matriz,
@@ -156,7 +166,8 @@ export class ListasService {
           ${fVend}
         ORDER BY clientes_cpf_cnpj_principal
       ) m
-      WHERE EXTRACT(MONTH FROM nascimento) = EXTRACT(MONTH FROM CURRENT_DATE)
+      LEFT JOIN ${this.VEND} vend ON vend.doc14 = lpad(regexp_replace(m.cpf_matriz,'[^0-9]','','g'),14,'0')
+      WHERE EXTRACT(MONTH FROM m.nascimento) = EXTRACT(MONTH FROM CURRENT_DATE)
       ORDER BY dia_aniv`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
@@ -172,6 +183,7 @@ export class ListasService {
     }
     const sql = `
       SELECT agg.cpf_matriz AS cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
+        vend.codigovend, vend.ven_nome AS vendedora_nome,
         ROUND(agg.total_3m,2)               AS total_3m,
         ROUND(agg.total_3m/3,2)             AS media_3m,
         ROUND(agg.mes_atual,2)              AS comprou_no_mes,
@@ -190,6 +202,7 @@ export class ListasService {
         GROUP BY 1
       ) agg
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = agg.cpf_matriz
+      LEFT JOIN ${this.VEND} vend ON vend.doc14 = agg.cpf_matriz
       WHERE agg.total_3m < 9600
       ORDER BY zerou_mes DESC, falta_comprar_mes DESC`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
