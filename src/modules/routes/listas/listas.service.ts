@@ -41,8 +41,18 @@ export class ListasService {
             (SELECT regexp_replace(doctoclie,'[^0-9]','','g') FROM vendedora_proprietaria WHERE codigovend = $${params.length})`;
   }
 
+  // Se o filtro de vendedora resultar em lista vazia, refaz sem o filtro (traz todas).
+  private async fallbackAll(f: any, run: (g: any) => Promise<any[]>): Promise<any[]> {
+    const rows = await run(f);
+    if (f && f.vendedora != null && rows.length === 0) {
+      return run({ ...f, vendedora: undefined });
+    }
+    return rows;
+  }
+
   /** Desafio da Corrida: ordenado por quem esta mais perto das 20 estrelas. Exclui premiados. */
-  async corrida(f: FiltroListaDto = {}) {
+  corrida(f: FiltroListaDto = {}) { return this.fallbackAll(f, (g) => this.corridaRun(g)); }
+  private async corridaRun(f: FiltroListaDto = {}) {
     const params: any[] = [];
     const fVend = this.filtroVendedoraPorFs(f.vendedora, params);
     const sql = `
@@ -106,7 +116,8 @@ export class ListasService {
   }
 
   /** Super Ofensiva: meses consecutivos batendo a meta (conta meses-com-meta). */
-  async superOfensiva(f: SuperOfensivaFiltroDto = {}) {
+  superOfensiva(f: SuperOfensivaFiltroDto = {}) { return this.fallbackAll(f, (g) => this.superOfensivaRun(g)); }
+  private async superOfensivaRun(f: SuperOfensivaFiltroDto = {}) {
     const params: any[] = [];
     let fEtapa = `AND s.meses_seguidos IN (4,5)`;
     if (f.etapa != null) {
@@ -143,7 +154,8 @@ export class ListasService {
   }
 
   /** Aniversariantes do mes, 1 linha por MATRIZ. */
-  async aniversariantes(f: FiltroListaDto = {}) {
+  aniversariantes(f: FiltroListaDto = {}) { return this.fallbackAll(f, (g) => this.aniversariantesRun(g)); }
+  private async aniversariantesRun(f: FiltroListaDto = {}) {
     const params: any[] = [];
     let fVend = '';
     if (f.vendedora != null) {
@@ -180,7 +192,8 @@ export class ListasService {
   }
 
   /** Desativacao: 1 linha por MATRIZ (soma vinculados). Media 3 meses < R$3.200. Ordena por mais risco. */
-  async desativacao(f: FiltroListaDto = {}) {
+  desativacao(f: FiltroListaDto = {}) { return this.fallbackAll(f, (g) => this.desativacaoRun(g)); }
+  private async desativacaoRun(f: FiltroListaDto = {}) {
     const params: any[] = [];
     let fVend = '';
     if (f.vendedora != null) {

@@ -22,6 +22,14 @@ export class ClientesService {
    * Mostra a vendedora dona; filtro opcional `vendedora` restringe aos cadastros dela.
    */
   async comprasPorMes(dto: ClienteComprasDto) {
+    const rows = await this.comprasPorMesRun(dto);
+    if (dto && dto.vendedora != null && rows.length === 0) {
+      return this.comprasPorMesRun({ ...dto, vendedora: undefined });
+    }
+    return rows;
+  }
+
+  private async comprasPorMesRun(dto: ClienteComprasDto) {
     const params: any[] = [dto.cpf]; // $1
     let dateCond: string;
     if (dto.dataIni || dto.dataFim) {
