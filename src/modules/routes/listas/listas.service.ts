@@ -73,16 +73,17 @@ export class ListasService {
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
-  /** Top 30 da Babita (ranking geral). Filtro vendedora opcional mantem a posicao ORIGINAL. */
+  /** Top 30 da Babita (ranking geral, sempre 30). Filtro vendedora apenas MARCA as dela (minha=true). */
   async top30(f: FiltroListaDto = {}) {
     const params: any[] = [];
-    let outerFilter = '';
+    let minhaExpr = 'false';
     if (f.vendedora != null) {
       params.push(f.vendedora);
-      outerFilter = `WHERE top.codigovend = $${params.length}`;
+      minhaExpr = `(top.codigovend = $${params.length})`;
     }
     const sql = `
-      SELECT * FROM (
+      SELECT top.*, ${minhaExpr} AS minha
+      FROM (
         SELECT x.posicao, x.cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
                vend.codigovend, vend.ven_nome AS vendedora_nome,
                ROUND(x.valor_venda, 2) AS valor_venda
@@ -100,7 +101,6 @@ export class ListasService {
         ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC
         LIMIT 30
       ) top
-      ${outerFilter}
       ORDER BY top.posicao ASC NULLS LAST, top.valor_venda DESC`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
