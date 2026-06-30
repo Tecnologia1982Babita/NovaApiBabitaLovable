@@ -192,10 +192,10 @@ export class ListasService {
       SELECT agg.cpf_matriz AS cpfcnpj, cli.nome, cli.telefone, true AS is_matriz,
         vend.codigovend, vend.ven_nome AS vendedora_nome,
         ROUND(agg.total_3m,2)               AS total_3m,
-        ROUND(agg.total_3m/3,2)             AS media_3m,
+        ROUND(agg.total_3m / (2 + EXTRACT(DAY FROM CURRENT_DATE)::numeric / EXTRACT(DAY FROM (date_trunc('month',CURRENT_DATE) + interval '1 month' - interval '1 day'))::numeric), 2)             AS media_3m,
         ROUND(agg.mes_atual,2)              AS comprou_no_mes,
         (agg.mes_atual = 0)                 AS zerou_mes,
-        GREATEST(0, ROUND(9600 - agg.total_3m,2)) AS falta_comprar_mes
+        GREATEST(0, ROUND(3200 * (2 + EXTRACT(DAY FROM CURRENT_DATE)::numeric / EXTRACT(DAY FROM (date_trunc('month',CURRENT_DATE) + interval '1 month' - interval '1 day'))::numeric) - agg.total_3m, 2)) AS falta_comprar_mes
       FROM (
         SELECT COALESCE(map.cpf_matriz, regexp_replace(p.doctoclie,'[^0-9]','','g')) AS cpf_matriz,
           SUM(COALESCE(p.totalgeral,0)) AS total_3m,
@@ -210,7 +210,7 @@ export class ListasService {
       ) agg
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = agg.cpf_matriz
       LEFT JOIN ${this.VEND} vend ON vend.doc14 = agg.cpf_matriz
-      WHERE agg.total_3m < 9600
+      WHERE agg.total_3m < 3200 * (2 + EXTRACT(DAY FROM CURRENT_DATE)::numeric / EXTRACT(DAY FROM (date_trunc('month',CURRENT_DATE) + interval '1 month' - interval '1 day'))::numeric)
       ORDER BY zerou_mes DESC, falta_comprar_mes DESC`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
