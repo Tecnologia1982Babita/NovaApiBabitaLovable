@@ -1,67 +1,89 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/services/prisma.service';
-import { IUsuario } from '../../global/usuario.entity';
 
 @Injectable()
 export class FashionstarsService {
   constructor(private prisma: PrismaService) {}
 
-    async findAll() {
-    
-        const fahionstars = await this.prisma.adfashionstars.findMany({
-            where: {   
-                ativo: 'S',
-            },
-            orderBy: {
-                id: 'asc',
-            },
-        });
+  async findAll() {
+    return this.prisma.adfashionstars.findMany({
+      where: { ativo: 'S' },
+      orderBy: { id: 'asc' },
+    });
+  }
 
-        return fahionstars;
+  /**
+   * Consulta cliente por CPF/CNPJ. Sempre retorna todas as infos (estrelas, plano, pontos...).
+   * statusLiga:
+   *  - "ativa"     -> esta no roster atual da Liga (tabela fashionstars)
+   *  - "ja_esteve" -> tem cadastro FashionStar (adfashionstars) mas nao esta no roster
+   *  - "nunca"     -> nao tem cadastro nenhum -> retorna zerado / "nao esta na Liga"
+   */
+  async findOne(cpfcnpj: string) {
+    if (!cpfcnpj) throw new BadRequestException('cpfcnpj e obrigatorio');
+
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT a.cpfcnpj, a.nomeparc, a.estrelas, a.planosfashion, a.pontosfashion,
+              a.diastroca, a.percentualdesc, a.compra7mes, a.mesatual,
+              a.dtnasc, a.dtiniplano, a.dtfimplano,
+              EXISTS (SELECT 1 FROM fashionstars f
+                      WHERE lpad(regexp_replace(f.cpfcnpj,'[^0-9]','','g'),14,'0')
+                          = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0')) AS na_liga
+       FROM adfashionstars a
+       WHERE lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0')
+           = lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
+       ORDER BY a.dataalt DESC NULLS LAST
+       LIMIT 1`,
+      cpfcnpj,
+    );
+
+    const fmt = (d: any) => (d ? new Date(d).toLocaleDateString('pt-BR') : null);
+    const cpfLimpo = String(cpfcnpj).replace(/\D/g, '');
+
+    if (!rows.length) {
+      return {
+        cpfcnpj: cpfLimpo,
+        nomeparc: null,
+        naLiga: false,
+        statusLiga: 'nunca',
+        mensagem: 'Cliente nao esta na Liga (sem cadastro FashionStar).',
+        estrelas: 0,
+        planosfashion: null,
+        pontosfashion: 0,
+        diastroca: 0,
+        percentualdesc: 0,
+        compra7mes: 0,
+        mesatual: 0,
+        saldoAtual: 0,
+        dtnasc: null,
+        dtiniplano: null,
+        dtfimplano: null,
+      };
     }
 
-    async findOne(cpfcnpj: string) {
-        if (!cpfcnpj) {
-            throw new BadRequestException('cpfcnpj é obrigatório');
-        }
+    const r = rows[0];
+    const naLiga = r.na_liga === true;
+    const pontos = Number(r.pontosfashion) || 0;
+    const compra7 = Number(r.compra7mes) || 0;
+    const mesAtual = Number(r.mesatual) || 0;
 
-        const fashionstar = await this.prisma.adfashionstars.findFirst({
-            where: {
-            cpfcnpj: String(cpfcnpj),
-            },
-        });
-
-        if (!fashionstar) {
-            throw new NotFoundException('Cliente não encontrado');
-        }
-
-        // 🔹 Normaliza CPF/CNPJ
-        if (fashionstar.cpfcnpj) {
-            fashionstar.cpfcnpj = fashionstar.cpfcnpj.replace(/\D/g, '');
-        }
-
-        // 🔹 Função pra formatar data
-        const formatDate = (date: Date | null) => {
-            return date ? new Date(date).toLocaleDateString('pt-BR') : null;
-        };
-
-        // 🔹 Cálculo (garantindo números)
-        const pontos = Number(fashionstar.pontosfashion) || 0;
-        const compra7 = Number(fashionstar.compra7mes) || 0;
-        const mesAtual = Number(fashionstar.mesatual) || 0;
-
-        const saldoAtual = pontos - compra7 + mesAtual;
-
-        // 🔹 Retorno formatado
-        return {
-            ...fashionstar,
-
-            datainc: formatDate(fashionstar.datainc),
-            dataalt: formatDate(fashionstar.dataalt),
-            dtnasc: formatDate(fashionstar.dtnasc),
-            dtiniplano: formatDate(fashionstar.dtiniplano),
-            dtfimplano: formatDate(fashionstar.dtfimplano),
-            saldoAtual, // 🔥 novo campo calculado
-        };
-    }
+    return {
+      cpfcnpj: String(r.cpfcnpj || cpfLimpo).replace(/\D/g, ''),
+      nomeparc: r.nomeparc ?? null,
+      naLiga,
+      statusLiga: naLiga ? 'ativa' : 'ja_esteve',
+      mensagem: naLiga ? 'Ativa na Liga.' : 'Ja esteve na Liga (nao esta ativa no momento).',
+      estrelas: Number(r.estrelas) || 0,
+      planosfashion: r.planosfashion ?? null,
+      pontosfashion: pontos,
+      diastroca: Number(r.diastroca) || 0,
+      percentualdesc: Number(r.percentualdesc) || 0,
+      compra7mes: compra7,
+      mesatual: mesAtual,
+      saldoAtual: pontos - compra7 + mesAtual,
+      dtnasc: fmt(r.dtnasc),
+      dtiniplano: fmt(r.dtiniplano),
+      dtfimplano: fmt(r.dtfimplano),
+    };
+  }
 }
