@@ -17,7 +17,7 @@ export class LigaQueryDto {
   @IsDateString()
   entradaNovasDesde?: string;
 
-  @ApiPropertyOptional({ description: 'Meta global (R$) para comparar. Default: 1210000.', example: 1210000 })
+  @ApiPropertyOptional({ description: 'Meta global (R$) para comparar. Default: 1600000.', example: 1210000 })
   @IsOptional()
   @IsNumberString()
   metaGlobal?: string;

@@ -23,7 +23,7 @@ export class MetaVendedorasService {
   constructor(private readonly prisma: PrismaService) {}
 
   private readonly ENTRADA_NOVAS_PADRAO = '2026-06-01';
-  private readonly META_GLOBAL_PADRAO = 1210000;
+  private readonly META_GLOBAL_PADRAO = 1600000;
 
   private primeiroDiaMesCorrente(): string {
     const hoje = new Date();
