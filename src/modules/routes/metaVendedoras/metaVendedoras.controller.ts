@@ -18,7 +18,7 @@ export class MetaVendedorasController {
   })
   @ApiOkResponse({
     description:
-      'Lista por vendedora: codigoVendedora (ven_cod), venNumero, nomeVendedora, totalVendaLiga, totalVendaNovasLiga.',
+      '{ metaGlobal, valorAtualCompra (liquido), atingiu, faltaParaMeta, vendedoras[] }. totalVendaLiga = liquido (vendas totalgeral - trocas).',
   })
   @Get('liga')
   liga(@Query() query: LigaQueryDto) {
