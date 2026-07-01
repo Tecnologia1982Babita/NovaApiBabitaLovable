@@ -5,11 +5,37 @@ import { PrismaService } from 'src/services/prisma.service';
 export class FashionstarsService {
   constructor(private prisma: PrismaService) {}
 
+  /** Lista de cadastros ATIVOS na Liga (roster fashionstars), 1 por matriz (~170). */
   async findAll() {
-    return this.prisma.adfashionstars.findMany({
-      where: { ativo: 'S' },
-      orderBy: { id: 'asc' },
-    });
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT DISTINCT ON (cpf_matriz)
+              codfashion, cpfcnpj, nome, plano, estrelas, pontosfashion, diastroca, percentualdesc, dtiniplano, dtfimplano
+       FROM (
+         SELECT a.codfashion,
+                regexp_replace(a.cpfcnpj,'[^0-9]','','g') AS cpfcnpj,
+                btrim(a.nomeparc) AS nome, a.planosfashion AS plano, a.estrelas,
+                a.pontosfashion, a.diastroca, a.percentualdesc, a.dtiniplano, a.dtfimplano,
+                lpad(regexp_replace(COALESCE(NULLIF(cr.clientes_cpf_cnpj_principal,''),cr.clientes_cpf_cnpj),'[^0-9]','','g'),14,'0') AS cpf_matriz
+         FROM fashionstars f
+         JOIN erp_clientes_real cr ON cr.clientes_cpf_cnpj = f.cpfcnpj
+         JOIN adfashionstars a ON lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') = f.cpfcnpj
+       ) t
+       ORDER BY cpf_matriz, dtfimplano DESC NULLS LAST`,
+    );
+    const fmt = (d: any) => (d ? new Date(d).toLocaleDateString('pt-BR') : null);
+    return rows.map((r) => ({
+      codfashion: r.codfashion,
+      cpfcnpj: r.cpfcnpj,
+      nome: r.nome,
+      plano: r.plano,
+      estrelas: Number(r.estrelas) || 0,
+      pontosfashion: Number(r.pontosfashion) || 0,
+      diastroca: Number(r.diastroca) || 0,
+      percentualdesc: Number(r.percentualdesc) || 0,
+      dtiniplano: fmt(r.dtiniplano),
+      dtfimplano: fmt(r.dtfimplano),
+      naLiga: true,
+    }));
   }
 
   /**
