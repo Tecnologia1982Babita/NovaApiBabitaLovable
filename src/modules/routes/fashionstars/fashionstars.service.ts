@@ -69,7 +69,8 @@ export class FashionstarsService {
                       WHERE lpad(regexp_replace(f.cpfcnpj,'[^0-9]','','g'),14,'0') IN (SELECT cpf14 FROM grupo)) AS na_liga
        FROM adfashionstars a
        WHERE lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') IN (SELECT cpf14 FROM grupo)
-       ORDER BY (EXISTS (SELECT 1 FROM fashionstars f
+       ORDER BY (lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') = (SELECT cpf14 FROM pref)) DESC,
+                (EXISTS (SELECT 1 FROM fashionstars f
                          WHERE lpad(regexp_replace(f.cpfcnpj,'[^0-9]','','g'),14,'0')
                              = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0'))) DESC,
                 a.dataalt DESC NULLS LAST
