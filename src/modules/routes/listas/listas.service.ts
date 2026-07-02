@@ -217,7 +217,7 @@ export class ListasService {
         LEFT JOIN ${this.CLI} map ON map.cpf14 = regexp_replace(p.doctoclie,'[^0-9]','','g')
         WHERE p.cancelado IS DISTINCT FROM 'S'
           AND p.data >= date_trunc('month',CURRENT_DATE) - INTERVAL '2 months'
-          AND p.data <  date_trunc('month',CURRENT_DATE) + INTERVAL '1 month'
+          AND p.data <= CURRENT_DATE
           ${fVend}
         GROUP BY 1
       ) agg
