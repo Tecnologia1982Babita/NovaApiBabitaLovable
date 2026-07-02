@@ -48,17 +48,31 @@ export class FashionstarsService {
   async findOne(cpfcnpj: string) {
     if (!cpfcnpj) throw new BadRequestException('cpfcnpj e obrigatorio');
 
+    // Considera o GRUPO da matriz (vinculados): status/infos valem pro grupo todo.
     const rows = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT a.cpfcnpj, a.nomeparc, a.estrelas, a.planosfashion, a.pontosfashion,
-              a.diastroca, a.percentualdesc, a.compra7mes, a.mesatual,
-              a.dtnasc, a.dtiniplano, a.dtfimplano,
+      `WITH pref AS (SELECT lpad(regexp_replace($1,'[^0-9]','','g'),14,'0') AS cpf14),
+            matriz AS (
+              SELECT lpad(regexp_replace(COALESCE(NULLIF(cr.clientes_cpf_cnpj_principal,''),cr.clientes_cpf_cnpj),'[^0-9]','','g'),14,'0') AS cpf_matriz
+              FROM erp_clientes_real cr, pref
+              WHERE lpad(regexp_replace(cr.clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = pref.cpf14
+              LIMIT 1
+            ),
+            grupo AS (
+              SELECT lpad(regexp_replace(cr.clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') AS cpf14
+              FROM erp_clientes_real cr, matriz
+              WHERE lpad(regexp_replace(COALESCE(NULLIF(cr.clientes_cpf_cnpj_principal,''),cr.clientes_cpf_cnpj),'[^0-9]','','g'),14,'0') = matriz.cpf_matriz
+              UNION SELECT cpf14 FROM pref
+            )
+       SELECT a.cpfcnpj, a.nomeparc, a.estrelas, a.planosfashion, a.pontosfashion, a.diastroca,
+              a.percentualdesc, a.compra7mes, a.mesatual, a.dtnasc, a.dtiniplano, a.dtfimplano,
               EXISTS (SELECT 1 FROM fashionstars f
-                      WHERE lpad(regexp_replace(f.cpfcnpj,'[^0-9]','','g'),14,'0')
-                          = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0')) AS na_liga
+                      WHERE lpad(regexp_replace(f.cpfcnpj,'[^0-9]','','g'),14,'0') IN (SELECT cpf14 FROM grupo)) AS na_liga
        FROM adfashionstars a
-       WHERE lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0')
-           = lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
-       ORDER BY a.dataalt DESC NULLS LAST
+       WHERE lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') IN (SELECT cpf14 FROM grupo)
+       ORDER BY (EXISTS (SELECT 1 FROM fashionstars f
+                         WHERE lpad(regexp_replace(f.cpfcnpj,'[^0-9]','','g'),14,'0')
+                             = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0'))) DESC,
+                a.dataalt DESC NULLS LAST
        LIMIT 1`,
       cpfcnpj,
     );
@@ -68,22 +82,11 @@ export class FashionstarsService {
 
     if (!rows.length) {
       return {
-        cpfcnpj: cpfLimpo,
-        nomeparc: null,
-        naLiga: false,
-        statusLiga: 'nunca',
-        mensagem: 'Cliente nao esta na Liga (sem cadastro FashionStar).',
-        estrelas: 0,
-        planosfashion: null,
-        pontosfashion: 0,
-        diastroca: 0,
-        percentualdesc: 0,
-        compra7mes: 0,
-        mesatual: 0,
-        saldoAtual: 0,
-        dtnasc: null,
-        dtiniplano: null,
-        dtfimplano: null,
+        cpfcnpj: cpfLimpo, nomeparc: null, naLiga: false, statusLiga: 'nunca',
+        mensagem: 'Cliente nao esta na Liga (sem cadastro FashionStar, incluindo vinculados).',
+        estrelas: 0, planosfashion: null, pontosfashion: 0, diastroca: 0,
+        percentualdesc: 0, compra7mes: 0, mesatual: 0, saldoAtual: 0,
+        dtnasc: null, dtiniplano: null, dtfimplano: null,
       };
     }
 
@@ -112,4 +115,5 @@ export class FashionstarsService {
       dtfimplano: fmt(r.dtfimplano),
     };
   }
+
 }
