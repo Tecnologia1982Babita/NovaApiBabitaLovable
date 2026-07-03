@@ -153,6 +153,7 @@ export class ListasService {
                   WHERE mes_ref = (SELECT max(mes_ref) FROM ofensiva_ligafashion_meta WHERE mes_ref <= date_trunc('month', CURRENT_DATE))) mt
       LEFT JOIN ofensiva_ligafashion_compra_mes cm ON cm.codparc = s.codparc AND cm.mes_ref = mt.mes_ref
       WHERE s.last_rnk = (SELECT count(*) FROM ofensiva_ligafashion_meta WHERE mes_ref <= date_trunc('month', CURRENT_DATE))
+        AND COALESCE(cli.is_matriz, true)
         ${fEtapa}
         ${fVend}
       ORDER BY s.meses_seguidos DESC, nome`;
