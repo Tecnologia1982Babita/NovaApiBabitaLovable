@@ -19,7 +19,10 @@ export class ListasService {
         (clientes_id_principal IS NULL OR clientes_id = clientes_id_principal) AS is_matriz,
         lpad(regexp_replace(COALESCE(NULLIF(clientes_cpf_cnpj_principal,''), clientes_cpf_cnpj),'[^0-9]','','g'),14,'0') AS cpf_matriz,
         btrim(clientes_nome) AS nome,
-        NULLIF(btrim(coalesce(clientes_ddd1,'')) || ' ' || btrim(coalesce(clientes_telefone1,'')), '') AS telefone
+        CASE WHEN regexp_replace(coalesce(clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
+             THEN NULLIF(btrim(coalesce(clientes_ddd2,'')) || ' ' || btrim(coalesce(clientes_telefone2,'')), '')
+             ELSE NULLIF(btrim(coalesce(clientes_ddd1,'')) || ' ' || btrim(coalesce(clientes_telefone1,'')), '')
+        END AS telefone
       FROM erp_clientes_real
     ) z ORDER BY cpf14
   )`;
