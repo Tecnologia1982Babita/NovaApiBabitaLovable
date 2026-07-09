@@ -11,9 +11,12 @@ import { FiltroListaDto, SuperOfensivaFiltroDto } from './dto/listas-filtro.dto'
 export class ListasService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // Situacoes de cliente ocultas em TODAS as listas: 6=ABERTO, 8=EM ATENDIMENTO.
+  private readonly SIT_EXCLUIR = '(cli.id_situacao IS NULL OR cli.id_situacao NOT IN (6,8))';
+
   // cpf(14) -> is_matriz, cpf_matriz, nome, telefone.
   private readonly CLI = `(
-    SELECT DISTINCT ON (cpf14) cpf14, is_matriz, cpf_matriz, nome, telefone FROM (
+    SELECT DISTINCT ON (cpf14) cpf14, is_matriz, cpf_matriz, nome, telefone, id_situacao FROM (
       SELECT
         regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g') AS cpf14,
         (clientes_id_principal IS NULL OR clientes_id = clientes_id_principal) AS is_matriz,
@@ -22,7 +25,8 @@ export class ListasService {
         CASE WHEN regexp_replace(coalesce(clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
              THEN NULLIF(btrim(coalesce(clientes_ddd2,'')) || ' ' || btrim(coalesce(clientes_telefone2,'')), '')
              ELSE NULLIF(btrim(coalesce(clientes_ddd1,'')) || ' ' || btrim(coalesce(clientes_telefone1,'')), '')
-        END AS telefone
+        END AS telefone,
+        clientes_id_situacao AS id_situacao
       FROM erp_clientes_real
     ) z ORDER BY cpf14
   )`;
@@ -82,6 +86,7 @@ export class ListasService {
       WHERE m.mesinicial <= CURRENT_DATE AND m.mesfinal >= CURRENT_DATE
         AND NOT EXISTS (SELECT 1 FROM corridas_ligafashion_premio p WHERE p.codparc = c.codparc)
         ${fVend}
+        AND ${this.SIT_EXCLUIR}
       ORDER BY faltam_estrelas ASC, realizado DESC`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
@@ -111,6 +116,7 @@ export class ListasService {
         ) x
         LEFT JOIN ${this.CLI} cli ON cli.cpf14 = x.cpfcnpj
         LEFT JOIN ${this.VEND} vend ON vend.doc14 = x.cpfcnpj
+        WHERE ${this.SIT_EXCLUIR}
         ORDER BY x.posicao ASC NULLS LAST, x.valor_venda DESC
         LIMIT 30
       ) top
@@ -159,6 +165,7 @@ export class ListasService {
         AND COALESCE(cli.is_matriz, true)
         ${fEtapa}
         ${fVend}
+        AND ${this.SIT_EXCLUIR}
       ORDER BY s.meses_seguidos DESC, nome`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
@@ -182,16 +189,23 @@ export class ListasService {
                    THEN make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int,     EXTRACT(MONTH FROM m.nascimento)::int, 1) - CURRENT_DATE
                    ELSE make_date(EXTRACT(YEAR FROM CURRENT_DATE)::int + 1, EXTRACT(MONTH FROM m.nascimento)::int, 1) - CURRENT_DATE
               END) AS dias_para_mes_aniversario,
-             NULLIF(btrim(coalesce(m.ddd,'')) || ' ' || btrim(coalesce(m.fone,'')), '') AS telefone
+             CASE WHEN regexp_replace(coalesce(m.fone2,''),'[^0-9]','','g') ~ '[1-9]'
+                  THEN NULLIF(btrim(coalesce(m.ddd2,'')) || ' ' || btrim(coalesce(m.fone2,'')), '')
+                  ELSE NULLIF(btrim(coalesce(m.ddd,'')) || ' ' || btrim(coalesce(m.fone,'')), '')
+             END AS telefone
       FROM (
         SELECT DISTINCT ON (clientes_cpf_cnpj_principal)
                clientes_cpf_cnpj_principal   AS cpf_matriz,
                clientes_nome_principal       AS nome_matriz,
                clientes_nascimento_principal AS nascimento,
                clientes_ddd1_principal       AS ddd,
-               clientes_telefone1_principal  AS fone
+               clientes_telefone1_principal  AS fone,
+               clientes_ddd2_principal       AS ddd2,
+               clientes_telefone2_principal  AS fone2
         FROM erp_clientes_real
         WHERE clientes_nascimento_principal IS NOT NULL
+          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8)
+          AND COALESCE(clientes_id_situacao_principal,-1) NOT IN (6,8)
           ${fVend}
         ORDER BY clientes_cpf_cnpj_principal
       ) m
@@ -247,6 +261,7 @@ export class ListasService {
       LEFT JOIN ${this.CLI} cli ON cli.cpf14 = agg.cpf_matriz
       LEFT JOIN ${this.VEND} vend ON vend.doc14 = agg.cpf_matriz
       WHERE agg.total_3m < 3200 --* (2 + EXTRACT(DAY FROM CURRENT_DATE)::numeric / EXTRACT(DAY FROM (date_trunc('month',CURRENT_DATE) + interval '1 month' - interval '1 day'))::numeric)
+        AND ${this.SIT_EXCLUIR}
       ORDER BY zerou_mes DESC, falta_comprar_mes DESC`;
       console.log(sql)
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
