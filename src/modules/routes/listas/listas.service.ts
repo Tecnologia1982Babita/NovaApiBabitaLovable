@@ -11,8 +11,8 @@ import { FiltroListaDto, SuperOfensivaFiltroDto } from './dto/listas-filtro.dto'
 export class ListasService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // Situacoes de cliente ocultas em TODAS as listas: 6=ABERTO, 8=EM ATENDIMENTO.
-  private readonly SIT_EXCLUIR = '(cli.id_situacao IS NULL OR cli.id_situacao NOT IN (6,8))';
+  // Situacoes de cliente ocultas em TODAS as listas: 6=ABERTO, 8=EM ATENDIMENTO, 9=AGENDADO, 95.
+  private readonly SIT_EXCLUIR = '(cli.id_situacao IS NULL OR cli.id_situacao NOT IN (6,8,9,95))';
 
   // cpf(14) -> is_matriz, cpf_matriz, nome, telefone.
   private readonly CLI = `(
@@ -204,8 +204,8 @@ export class ListasService {
                clientes_telefone2_principal  AS fone2
         FROM erp_clientes_real
         WHERE clientes_nascimento_principal IS NOT NULL
-          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8)
-          AND COALESCE(clientes_id_situacao_principal,-1) NOT IN (6,8)
+          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8,9,95)
+          AND COALESCE(clientes_id_situacao_principal,-1) NOT IN (6,8,9,95)
           ${fVend}
         ORDER BY clientes_cpf_cnpj_principal
       ) m

@@ -69,7 +69,7 @@ export class FashionstarsService {
          FROM adfashionstars a
          WHERE lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') = ANY($1::text[])
        ) t
-       WHERE (t.id_situacao IS NULL OR t.id_situacao NOT IN (6,8))
+       WHERE (t.id_situacao IS NULL OR t.id_situacao NOT IN (6,8,9,95))
        ORDER BY cpf_matriz, dtfimplano DESC NULLS LAST`,
       cpfs,
     );
@@ -102,7 +102,7 @@ export class FashionstarsService {
        WHERE lpad(regexp_replace(COALESCE(NULLIF(cr.clientes_cpf_cnpj_principal,''),cr.clientes_cpf_cnpj),'[^0-9]','','g'),14,'0') = (
          SELECT lpad(regexp_replace(COALESCE(NULLIF(clientes_cpf_cnpj_principal,''),clientes_cpf_cnpj),'[^0-9]','','g'),14,'0')
          FROM erp_clientes_real WHERE lpad(regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = $1 LIMIT 1)
-         AND COALESCE(cr.clientes_id_situacao,-1) NOT IN (6,8)
+         AND COALESCE(cr.clientes_id_situacao,-1) NOT IN (6,8,9,95)
        UNION SELECT $1`,
       cpf14in,
     );
@@ -131,7 +131,7 @@ export class FashionstarsService {
               END AS telefone
        FROM erp_clientes_real
        WHERE lpad(regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = ANY($1::text[])
-         AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8)
+         AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8,9,95)
        ORDER BY (lpad(regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = $2) DESC,
                 (regexp_replace(coalesce(clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]') DESC
        LIMIT 1`,

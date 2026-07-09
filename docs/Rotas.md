@@ -39,6 +39,11 @@ Body: `{ "usu_login": "JULIANA.FERREIRA", "usu_senha": "12345" }`
 | GET | `/fashionstars` | Lista ativos (`ativo = 'S'`) |
 | GET | `/fashionstars/:cpfcnpj` | Busca por CPF/CNPJ + cálculo de saldo |
 
+## Filtro de situacao do cliente (revendedoras)
+> ℹ️ Em **todas** as rotas que retornam clientes/revendedoras — `/listas/corrida`, `/listas/top30`, `/listas/super-ofensiva`, `/listas/aniversariantes`, `/listas/desativacao`, `/clientes/compras-mes`, `GET /fashionstars` e `GET /fashionstars/:cpfcnpj` — são **omitidos** os clientes com `erp_clientes_real.clientes_id_situacao` em **6 (ABERTO), 8 (EM ATENDIMENTO), 9 (AGENDADO) e 95**.
+> O total de vendas de `/meta-vendedoras/liga` **não** aplica esse filtro (soma o valor faturado da Liga).
+> Telefone retornado = **celular** (`clientes_telefone2`) com fallback para o fixo (`clientes_telefone1`).
+
 ## Respostas padrão
 - `200/201` sucesso · `400` validação · `401` credenciais · `404` não encontrado · `409` login duplicado.
 - Nenhuma resposta inclui `usu_senha` (ver [[Convenções]]).

@@ -67,7 +67,7 @@ export class ClientesService {
         SELECT clientes_cpf_cnpj_principal AS principal
         FROM erp_clientes_real
         WHERE regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g') = lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
-          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8)
+          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8,9,95)
         LIMIT 1
       ),
       matrizcpf AS (
@@ -80,7 +80,7 @@ export class ClientesService {
       cadastros AS (
         SELECT clientes_cpf_cnpj AS cpf FROM erp_clientes_real
         WHERE clientes_cpf_cnpj_principal = (SELECT principal FROM alvo)
-          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8)
+          AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8,9,95)
           ${fVendCad}
         ${unirInput}
       ),
