@@ -105,4 +105,45 @@ export class ClientesService {
       ORDER BY ref`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
+
+  /**
+   * Clientes ativos: compras liquidas (view_base_12meses.prcvenda_x_quantidade, ja assinado
+   * PEDIDO=+/TROCA=-) >= R$1 nos ultimos 6 meses-calendario fechados (mes corrente excluido).
+   * Oculta situacao 6/8/9/95. 1 linha por cliente (registro mais recente da janela).
+   * Telefone = celular (clientes_telefone2), fallback fixo (clientes_telefone1).
+   */
+  async listarAtivos() {
+    const sql = `
+      WITH janela AS (
+        SELECT cod_cliente, data, situacao, nome_cliente, doc_cliente, ven_nome, prcvenda_x_quantidade
+        FROM view_base_12meses
+        WHERE data >= date_trunc('month', CURRENT_DATE) - interval '6 months'
+          AND data <  date_trunc('month', CURRENT_DATE)
+      ),
+      agregado AS (
+        SELECT cod_cliente, SUM(prcvenda_x_quantidade) AS total_liquido
+        FROM janela GROUP BY cod_cliente
+        HAVING SUM(prcvenda_x_quantidade) >= 1
+      ),
+      recente AS (
+        SELECT DISTINCT ON (cod_cliente) cod_cliente, nome_cliente, doc_cliente, situacao, ven_nome
+        FROM janela ORDER BY cod_cliente, data DESC
+      )
+      SELECT
+        r.cod_cliente AS codparc,
+        btrim(r.nome_cliente) AS nome,
+        r.doc_cliente AS cpfcnpj,
+        CASE WHEN regexp_replace(coalesce(ecr.clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
+             THEN NULLIF(btrim(coalesce(ecr.clientes_ddd2,'')) || ' ' || btrim(coalesce(ecr.clientes_telefone2,'')), '')
+             ELSE NULLIF(btrim(coalesce(ecr.clientes_ddd1,'')) || ' ' || btrim(coalesce(ecr.clientes_telefone1,'')), '')
+        END AS telefone,
+        r.situacao AS situacao,
+        btrim(r.ven_nome) AS vendedora
+      FROM agregado a
+      JOIN recente r ON r.cod_cliente = a.cod_cliente
+      LEFT JOIN erp_clientes_real ecr ON ecr.clientes_id = r.cod_cliente
+      WHERE (r.situacao IS NULL OR r.situacao NOT IN (6,8,9,95))
+      ORDER BY r.cod_cliente`;
+    return this.prisma.$queryRawUnsafe<any[]>(sql);
+  }
 }

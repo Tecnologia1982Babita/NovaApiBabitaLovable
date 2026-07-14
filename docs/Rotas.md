@@ -39,8 +39,17 @@ Body: `{ "usu_login": "JULIANA.FERREIRA", "usu_senha": "12345" }`
 | GET | `/fashionstars` | Lista ativos (`ativo = 'S'`) |
 | GET | `/fashionstars/:cpfcnpj` | Busca por CPF/CNPJ + cálculo de saldo |
 
+## Clientes
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/clientes/compras-mes` | Compra por mês do cliente (líquido = vendas − trocas), somando vinculados (matriz) |
+| GET | `/clientes/ativos` | Clientes ativos: compras líquidas ≥ R$1 nos últimos 6 meses-calendário fechados (mês corrente excluído); 1 linha por cliente (registro mais recente da janela) |
+
+`GET /clientes/ativos` não recebe parâmetros. Fonte: `view_base_12meses` (agregação ao vivo,
+sem cache/job agendado). Campos: `codparc, nome, cpfcnpj, telefone, situacao, vendedora`.
+
 ## Filtro de situacao do cliente (revendedoras)
-> ℹ️ Em **todas** as rotas que retornam clientes/revendedoras — `/listas/corrida`, `/listas/top30`, `/listas/super-ofensiva`, `/listas/aniversariantes`, `/listas/desativacao`, `/clientes/compras-mes`, `GET /fashionstars` e `GET /fashionstars/:cpfcnpj` — são **omitidos** os clientes com `erp_clientes_real.clientes_id_situacao` em **6 (ABERTO), 8 (EM ATENDIMENTO), 9 (AGENDADO) e 95**.
+> ℹ️ Em **todas** as rotas que retornam clientes/revendedoras — `/listas/corrida`, `/listas/top30`, `/listas/super-ofensiva`, `/listas/aniversariantes`, `/listas/desativacao`, `/clientes/compras-mes`, `/clientes/ativos`, `GET /fashionstars` e `GET /fashionstars/:cpfcnpj` — são **omitidos** os clientes com `erp_clientes_real.clientes_id_situacao` (ou `view_base_12meses.situacao`, mesma coluna) em **6 (ABERTO), 8 (EM ATENDIMENTO), 9 (AGENDADO) e 95**.
 > O total de vendas de `/meta-vendedoras/liga` **não** aplica esse filtro (soma o valor faturado da Liga).
 > Telefone retornado = **celular** (`clientes_telefone2`) com fallback para o fixo (`clientes_telefone1`).
 
