@@ -48,6 +48,16 @@ Body: `{ "usu_login": "JULIANA.FERREIRA", "usu_senha": "12345" }`
 `GET /clientes/ativos` não recebe parâmetros. Fonte: `view_base_12meses` (agregação ao vivo,
 sem cache/job agendado). Campos: `codparc, nome, cpfcnpj, telefone, situacao, vendedora`.
 
+## [[CentralAuth]]
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/central-auth/login` | Login delegado ao CentralBabita (bridge servidor-a-servidor) |
+
+Body: `{ "login": "...", "senha": "..." }` (senha em texto puro, hasheada em MD5 antes de
+sair para o Central). Subdivisão de **integração** para apps Lovable além da Liga Fashion
+Stars — hoje usada por contas do setor Fornecedores. Ver [[CentralAuth]] para o fluxo
+completo e a limitação de segurança herdada do Central.
+
 ## Filtro de situacao do cliente (revendedoras)
 > ℹ️ Em **todas** as rotas que retornam clientes/revendedoras — `/listas/corrida`, `/listas/top30`, `/listas/super-ofensiva`, `/listas/aniversariantes`, `/listas/desativacao`, `/clientes/compras-mes`, `/clientes/ativos`, `GET /fashionstars` e `GET /fashionstars/:cpfcnpj` — são **omitidos** os clientes com `erp_clientes_real.clientes_id_situacao` (ou `view_base_12meses.situacao`, mesma coluna) em **6 (ABERTO), 8 (EM ATENDIMENTO), 9 (AGENDADO) e 95**.
 > O total de vendas de `/meta-vendedoras/liga` **não** aplica esse filtro (soma o valor faturado da Liga).
