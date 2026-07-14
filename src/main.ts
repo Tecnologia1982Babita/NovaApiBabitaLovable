@@ -68,6 +68,7 @@ function createSwaggerConfig() {
     .addTag('Listas', 'Listas de revendedoras. Oculta clientes com situacao 6/8/9/95 (erp_clientes_real.clientes_id_situacao); telefone = celular (clientes_telefone2) com fallback pro fixo (clientes_telefone1).')
     .addTag('Clientes', 'Consultas de clientes. Oculta clientes com situacao 6/8/9/95; telefone = celular (clientes_telefone2).')
     .addTag('fashionstars', 'Revendedoras na Liga Fashion Stars. Oculta clientes com situacao 6/8/9/95; telefone = celular (clientes_telefone2).')
+    .addTag('Integração Central', 'Login delegado ao CentralBabita — bridge server-to-server para apps Lovable integrados autenticarem contra contas já cadastradas no Central (ex.: Fornecedores).')
     .build();
 }
 

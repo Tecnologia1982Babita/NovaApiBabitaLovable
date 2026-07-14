@@ -6,6 +6,7 @@ import { ListasModule } from '../routes/listas/listas.module';
 import { MetaVendedorasModule } from '../routes/metaVendedoras/metaVendedoras.module';
 import { UsuariosModule } from '../routes/usuarios/usuarios.module';
 import { VendedorasModule } from '../routes/vendedoras/vendedoras.module';
+import { CentralAuthModule } from '../routes/centralAuth/centralAuth.module';
 import { RootController } from './root.controller';
 
 // Modulo raiz independente: agrega apenas os modulos funcionais.
@@ -19,6 +20,7 @@ import { RootController } from './root.controller';
     MetaVendedorasModule,
     ListasModule,
     ClientesModule,
+    CentralAuthModule,
   ],
   controllers: [RootController],
 })
