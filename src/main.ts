@@ -69,6 +69,7 @@ function createSwaggerConfig() {
     .addTag('Clientes', 'Consultas de clientes. Oculta clientes com situacao 6/8/9/95; telefone = celular (clientes_telefone2).')
     .addTag('fashionstars', 'Revendedoras na Liga Fashion Stars. Oculta clientes com situacao 6/8/9/95; telefone = celular (clientes_telefone2).')
     .addTag('Integração Central', 'Login delegado ao CentralBabita — bridge server-to-server para apps Lovable integrados autenticarem contra contas já cadastradas no Central (ex.: Fornecedores).')
+    .addTag('FichaRisco', 'Clientes em risco de perder ficha (compra liquida < R$3.200 nos 2 meses fechados anteriores). Historico persistido em bd_babitacentral (lovable_ficha_risco_historico) - snapshot de inicio de mes + fechamento, nao recalcula depois de gravado. Oculta situacao 6/8/9/95.')
     .build();
 }
 

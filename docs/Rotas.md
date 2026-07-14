@@ -58,8 +58,34 @@ sair para o Central). Subdivisão de **integração** para apps Lovable além da
 Stars — hoje usada por contas do setor Fornecedores. Ver [[CentralAuth]] para o fluxo
 completo e a limitação de segurança herdada do Central.
 
+## FichaRisco
+Clientes em risco de perder ficha (compra líquida < R$3.200 nos 2 meses-calendário
+fechados anteriores ao mês de referência). Diferente das demais rotas: **tem histórico
+persistido** (tabela `lovable_ficha_risco_historico` em **bd_babitacentral**, servidor 251
+— não em bd_think), com snapshot congelado no início do mês e fechamento no fim; nunca
+recalcula ou sobrescreve depois de gravado. Oculta situação 6/8/9/95 (mesmo critério das
+outras rotas). Fonte de leitura: `view_base_12meses` (bd_think).
+
+| Método | Rota | Descrição |
+|---|---|---|
+| POST | `/ficha-risco/snapshot` | Dispara o snapshot de início de mês (idempotente — se já existir, só retorna) |
+| POST | `/ficha-risco/fechamento` | Fecha o mês (grava valor_realizado/atingiu/vendedora/loja de fechamento) |
+| GET | `/ficha-risco/atual` | Snapshot do mês corrente já persistido (não calcula ao vivo) |
+| GET | `/ficha-risco/historico` | Histórico com filtros opcionais `mesReferencia`, `vendedora`, `loja` |
+
+Query opcional `mesReferencia` (YYYY-MM) nas rotas POST — default = mês corrente
+(`snapshot`) ou o mês aberto mais antigo (`fechamento`). `vendedora`/`loja` no registro
+histórico são as do **fechamento** (fim do mês), não as do início — se o cliente mudar de
+vendedora/loja no meio do mês, prevalece a última. Resposta de `atual`/`historico`: lista
+de clientes (`codparc, nome, vendedora, loja, lojas_nome, valor_necessario,
+valor_realizado, atingiu`) + agregações `porVendedora`/`porLoja` (contagem em risco, quantos
+atingiram, soma valor_necessario/valor_realizado) + totais gerais.
+
+Agendado no crontab do root (202), dia 1 de cada mês: fecha o mês anterior e abre o
+snapshot do novo mês no mesmo disparo.
+
 ## Filtro de situacao do cliente (revendedoras)
-> ℹ️ Em **todas** as rotas que retornam clientes/revendedoras — `/listas/corrida`, `/listas/top30`, `/listas/super-ofensiva`, `/listas/aniversariantes`, `/listas/desativacao`, `/clientes/compras-mes`, `/clientes/ativos`, `GET /fashionstars` e `GET /fashionstars/:cpfcnpj` — são **omitidos** os clientes com `erp_clientes_real.clientes_id_situacao` (ou `view_base_12meses.situacao`, mesma coluna) em **6 (ABERTO), 8 (EM ATENDIMENTO), 9 (AGENDADO) e 95**.
+> ℹ️ Em **todas** as rotas que retornam clientes/revendedoras — `/listas/corrida`, `/listas/top30`, `/listas/super-ofensiva`, `/listas/aniversariantes`, `/listas/desativacao`, `/clientes/compras-mes`, `/clientes/ativos`, `/ficha-risco/*`, `GET /fashionstars` e `GET /fashionstars/:cpfcnpj` — são **omitidos** os clientes com `erp_clientes_real.clientes_id_situacao` (ou `view_base_12meses.situacao`, mesma coluna) em **6 (ABERTO), 8 (EM ATENDIMENTO), 9 (AGENDADO) e 95**.
 > O total de vendas de `/meta-vendedoras/liga` **não** aplica esse filtro (soma o valor faturado da Liga).
 > Telefone retornado = **celular** (`clientes_telefone2`) com fallback para o fixo (`clientes_telefone1`).
 
