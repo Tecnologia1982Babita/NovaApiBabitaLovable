@@ -111,6 +111,9 @@ export class ClientesService {
    * PEDIDO=+/TROCA=-) >= R$1 nos ultimos 6 meses-calendario fechados (mes corrente excluido).
    * Oculta situacao 6/8/9/95. 1 linha por cliente (registro mais recente da janela).
    * Telefone = celular (clientes_telefone2), fallback fixo (clientes_telefone1).
+   * Vendedora = vendedora_proprietaria (dona do cliente, mesmo padrao de /listas e
+   * /clientes/compras-mes); so cai pra vendedora da ultima venda (view_base_12meses)
+   * se o cliente nao tiver registro em vendedora_proprietaria (raro - fallback "ultimo caso").
    */
   async listarAtivos() {
     const sql = `
@@ -138,10 +141,11 @@ export class ClientesService {
              ELSE NULLIF(btrim(coalesce(ecr.clientes_ddd1,'')) || ' ' || btrim(coalesce(ecr.clientes_telefone1,'')), '')
         END AS telefone,
         r.situacao AS situacao,
-        btrim(r.ven_nome) AS vendedora
+        COALESCE(btrim(vend.ven_nome), btrim(r.ven_nome)) AS vendedora
       FROM agregado a
       JOIN recente r ON r.cod_cliente = a.cod_cliente
       LEFT JOIN erp_clientes_real ecr ON ecr.clientes_id = r.cod_cliente
+      LEFT JOIN ${this.VEND} vend ON vend.doc14 = regexp_replace(r.doc_cliente,'[^0-9]','','g')
       WHERE (r.situacao IS NULL OR r.situacao NOT IN (6,8,9,95))
       ORDER BY r.cod_cliente`;
     return this.prisma.$queryRawUnsafe<any[]>(sql);
