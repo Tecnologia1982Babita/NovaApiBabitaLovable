@@ -3,7 +3,7 @@ import { IsNumberString, IsOptional, IsString, Matches } from 'class-validator';
 
 /** mesReferencia aceita YYYY-MM ou YYYY-MM-DD; omitido = mes corrente. */
 export class MesReferenciaDto {
-  @ApiPropertyOptional({ description: 'Mes de referencia (YYYY-MM). Omitido = mes corrente.', example: '2026-08' })
+  @ApiPropertyOptional({ description: 'Mes de referencia (YYYY-MM). Omitido = mes corrente. ATENCAO: rota que grava dado real se chamada via Swagger /Try it out.' })
   @IsOptional()
   @IsString()
   @Matches(/^\d{4}-\d{2}(-\d{2})?$/, { message: 'mesReferencia deve ser YYYY-MM ou YYYY-MM-DD' })
