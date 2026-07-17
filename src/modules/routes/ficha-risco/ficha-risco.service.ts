@@ -60,10 +60,15 @@ export class FichaRiscoService {
       WITH janela AS (
         SELECT cod_cliente, data, situacao, nome_cliente, doc_cliente, ven_nome, loja, prcvenda_x_quantidade
         FROM view_base_12meses
-        WHERE data >= ($1::date - interval '2 months') AND data < ($1::date + interval '1 month')
+        WHERE data >= ($1::date - interval '6 months') AND data < ($1::date + interval '1 month')
       ),
       fechados AS (
         SELECT cod_cliente, SUM(prcvenda_x_quantidade) AS meses_fechados
+        FROM janela WHERE data >= ($1::date - interval '2 months') AND data < $1::date GROUP BY cod_cliente
+      ),
+      comprado6m AS (
+        -- janela mais larga (6 meses fechados), so pra contexto de leitura - nao entra na regra de risco/atingiu
+        SELECT cod_cliente, SUM(prcvenda_x_quantidade) AS valor_comprado_6meses
         FROM janela WHERE data < $1::date GROUP BY cod_cliente
       ),
       realizado AS (
@@ -81,10 +86,12 @@ export class FichaRiscoService {
         r.loja AS loja,
         (${VALOR_MINIMO} - f.meses_fechados) AS valor_necessario,
         COALESCE(rl.valor_realizado, 0) AS valor_realizado,
-        (f.meses_fechados + COALESCE(rl.valor_realizado, 0)) >= ${VALOR_MINIMO} AS atingiu
+        (f.meses_fechados + COALESCE(rl.valor_realizado, 0)) >= ${VALOR_MINIMO} AS atingiu,
+        COALESCE(c6.valor_comprado_6meses, 0) AS valor_comprado_6meses
       FROM fechados f
       JOIN recente r ON r.cod_cliente = f.cod_cliente
       LEFT JOIN realizado rl ON rl.cod_cliente = f.cod_cliente
+      LEFT JOIN comprado6m c6 ON c6.cod_cliente = f.cod_cliente
       LEFT JOIN ${this.VEND} vend ON vend.doc14 = regexp_replace(r.doc_cliente,'[^0-9]','','g')
       WHERE f.meses_fechados < ${VALOR_MINIMO}
         AND (r.situacao IS NULL OR r.situacao NOT IN (6,8,9,95))
@@ -102,6 +109,7 @@ export class FichaRiscoService {
         valor_necessario: Number(r.valor_necessario),
         valor_realizado: Number(r.valor_realizado),
         atingiu: r.atingiu,
+        valor_comprado_6meses: Number(r.valor_comprado_6meses),
       }))
       .filter(
         (c) =>
