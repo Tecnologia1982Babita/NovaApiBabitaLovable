@@ -1,44 +1,28 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/services/prisma.service';
 
-const REF_URL = 'https://apirevendedoratime.babita.com.br/ConsultaCadastrosFashionStar';
 const ROSTER_TTL_MS = 5 * 60 * 1000;
 
 @Injectable()
 export class FashionstarsService {
   constructor(private prisma: PrismaService) {}
-  private readonly logger = new Logger(FashionstarsService.name);
   private rosterCache: { at: number; set: Set<string> } | null = null;
 
   private norm14(v: any): string {
     return String(v ?? '').replace(/\D/g, '').padStart(14, '0');
   }
 
-  /** Roster ATIVO da Liga, ao vivo (API referencia). Cache 5min. Fallback: fashionstars (bd_think, pode estar defasada). */
+  /** Roster ATIVO da Liga: consulta interna direto em fashionstars (bd_think, sincronizada 1x/dia do Sankhya via cron no .202). Cache 5min. */
   private async rosterAtivo(): Promise<Set<string>> {
     if (this.rosterCache && Date.now() - this.rosterCache.at < ROSTER_TTL_MS) {
       return this.rosterCache.set;
     }
-    try {
-      const resp = await fetch(REF_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: '{}',
-      });
-      const arr = (await resp.json()) as any[];
-      const set = new Set<string>(arr.map((r) => this.norm14(r[1])));
-      if (set.size > 0) {
-        this.rosterCache = { at: Date.now(), set };
-        return set;
-      }
-      throw new Error('roster vazio');
-    } catch (e) {
-      this.logger.warn(`Roster ao vivo indisponivel (${e}); usando fashionstars (bd_think).`);
-      const rows = await this.prisma.$queryRawUnsafe<any[]>(
-        `SELECT lpad(regexp_replace(cpfcnpj,'[^0-9]','','g'),14,'0') AS c FROM fashionstars`,
-      );
-      return new Set(rows.map((r) => r.c));
-    }
+    const rows = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT lpad(regexp_replace(cpfcnpj,'[^0-9]','','g'),14,'0') AS c FROM fashionstars WHERE ativo = 'S'`,
+    );
+    const set = new Set<string>(rows.map((r) => r.c));
+    this.rosterCache = { at: Date.now(), set };
+    return set;
   }
 
   /** Lista de cadastros ATIVOS na Liga (roster vivo), 1 por matriz, com infos. */
