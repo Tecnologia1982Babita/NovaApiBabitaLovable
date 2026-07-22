@@ -37,20 +37,25 @@ export class FashionstarsService {
          SELECT a.codfashion, regexp_replace(a.cpfcnpj,'[^0-9]','','g') AS cpfcnpj,
                 btrim(a.nomeparc) AS nome, a.planosfashion AS plano, a.estrelas,
                 a.pontosfashion, a.diastroca, a.percentualdesc, a.dtiniplano, a.dtfimplano,
-                COALESCE(
-                  (SELECT lpad(regexp_replace(COALESCE(NULLIF(cr.clientes_cpf_cnpj_principal,''),cr.clientes_cpf_cnpj),'[^0-9]','','g'),14,'0')
-                     FROM erp_clientes_real cr
-                     WHERE lpad(regexp_replace(cr.clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') LIMIT 1),
-                  lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0')) AS cpf_matriz,
-                (SELECT cr.clientes_id_situacao FROM erp_clientes_real cr
-                   WHERE lpad(regexp_replace(cr.clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') LIMIT 1) AS id_situacao,
-                (SELECT CASE WHEN regexp_replace(coalesce(cr.clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
-                             THEN NULLIF(btrim(coalesce(cr.clientes_ddd2,'')) || ' ' || btrim(coalesce(cr.clientes_telefone2,'')), '')
-                             ELSE NULLIF(btrim(coalesce(cr.clientes_ddd1,'')) || ' ' || btrim(coalesce(cr.clientes_telefone1,'')), '')
-                        END
-                   FROM erp_clientes_real cr
-                   WHERE lpad(regexp_replace(cr.clientes_cpf_cnpj,'[^0-9]','','g'),14,'0') = lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') LIMIT 1) AS telefone
+                COALESCE(map.cpf_matriz, lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0')) AS cpf_matriz,
+                map.id_situacao,
+                map.telefone
          FROM adfashionstars a
+         LEFT JOIN (
+           SELECT DISTINCT ON (cpf14) cpf14,
+                  lpad(regexp_replace(COALESCE(NULLIF(clientes_cpf_cnpj_principal,''), clientes_cpf_cnpj),'[^0-9]','','g'),14,'0') AS cpf_matriz,
+                  clientes_id_situacao AS id_situacao,
+                  CASE WHEN regexp_replace(coalesce(clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
+                       THEN NULLIF(btrim(coalesce(clientes_ddd2,'')) || ' ' || btrim(coalesce(clientes_telefone2,'')), '')
+                       ELSE NULLIF(btrim(coalesce(clientes_ddd1,'')) || ' ' || btrim(coalesce(clientes_telefone1,'')), '')
+                  END AS telefone
+           FROM (
+             SELECT regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g') AS cpf14, clientes_cpf_cnpj_principal, clientes_cpf_cnpj,
+                    clientes_id_situacao, clientes_telefone1, clientes_telefone2, clientes_ddd1, clientes_ddd2
+             FROM erp_clientes_real
+           ) z
+           ORDER BY cpf14
+         ) map ON map.cpf14 = regexp_replace(a.cpfcnpj,'[^0-9]','','g')
          WHERE lpad(regexp_replace(a.cpfcnpj,'[^0-9]','','g'),14,'0') = ANY($1::text[])
        ) t
        WHERE (t.id_situacao IS NULL OR t.id_situacao NOT IN (6,8,9,95))
