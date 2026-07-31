@@ -26,7 +26,8 @@ export class ClienteComprasDto {
   @ApiPropertyOptional({
     description:
       `Lote de CPF/CNPJ (ate ${MAX_CPFS_LOTE}) - uma chamada no lugar de uma por cliente. ` +
-      'Exige granularidade "total" e devolve 1 item por cliente. Duplicados sao unificados.',
+      'Exige granularidade "total" e devolve 1 item por MATRIZ: duplicados e CPFs vinculados ' +
+      'a mesma matriz colapsam numa linha so.',
     type: [String],
     example: ['06472333637', '12345678909'],
   })
@@ -40,7 +41,8 @@ export class ClienteComprasDto {
   @ApiPropertyOptional({
     description:
       'Agrupamento: "mes" (default) ou "dia" quebram o periodo de UM cpf; ' +
-      '"total" soma o periodo inteiro e devolve 1 item por cliente (obrigatorio em lote).',
+      '"total" soma o periodo inteiro e devolve 1 item por MATRIZ, com os vinculados ' +
+      'ja consolidados (obrigatorio em lote).',
     enum: ['mes', 'dia', 'total'],
     example: 'mes',
   })
@@ -66,7 +68,7 @@ export class ClienteComprasDto {
   @ApiPropertyOptional({
     description:
       'codigovend da vendedora. SEM cpf/cpfs[] (e com granularidade "total") ela vira o SELETOR: ' +
-      'devolve 1 item para cada cliente de que ela e a dona (vendedora_proprietaria). ' +
+      'devolve os clientes de que ela e a dona (vendedora_proprietaria), consolidados por matriz. ' +
       'Junto de um cpf unico (mes/dia) mantem o comportamento antigo: restringe aos cadastros dela. ' +
       'Junto de cpfs[] e ignorada - quem manda na lista sao os CPFs.',
     example: 55,

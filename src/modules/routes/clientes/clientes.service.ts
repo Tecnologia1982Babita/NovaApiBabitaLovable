@@ -16,6 +16,20 @@ export class ClientesService {
     ) z ORDER BY doc14, dat_inc DESC NULLS LAST
   )`;
 
+  // Situacoes de cliente ocultas em todas as rotas (6=ABERTO, 8=EM ATENDIMENTO, 9=AGENDADO, 95).
+  private sitOk(alias: string): string {
+    return `COALESCE(${alias}.clientes_id_situacao,-1) NOT IN (6,8,9,95)`;
+  }
+
+  // Telefone = celular (clientes_telefone2), fallback fixo. Igual a /clientes/ativos e /listas,
+  // mas NULL em vez de " " quando o cliente nao tem nenhum dos dois.
+  private telefone(alias: string): string {
+    return `CASE WHEN regexp_replace(COALESCE(${alias}.clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
+                 THEN NULLIF(btrim(btrim(COALESCE(${alias}.clientes_ddd2,'')) || ' ' || btrim(COALESCE(${alias}.clientes_telefone2,''))), '')
+                 ELSE NULLIF(btrim(btrim(COALESCE(${alias}.clientes_ddd1,'')) || ' ' || btrim(COALESCE(${alias}.clientes_telefone1,''))), '')
+            END`;
+  }
+
   /** true quando a string tem pelo menos um digito (CPF/CNPJ utilizavel). */
   private temDigito(valor?: string): boolean {
     return /\d/.test(String(valor ?? ''));
@@ -25,9 +39,10 @@ export class ClientesService {
    * Compra do cliente (liquido = erp_pedidos - erp_trocas), somando os cadastros vinculados (matriz).
    *
    * Dois formatos de resposta:
-   * - `granularidade` "mes" (default) / "dia": UM cpf quebrado por periodo (comportamento historico).
-   * - `granularidade` "total": 1 item por cliente com o periodo somado - aceita `cpfs[]` (lote) ou
-   *   `vendedora` sem cpf (todos os clientes dela), trocando ~1 chamada por CPF por uma unica.
+   * - `granularidade` "mes" (default) / "dia": UM cpf quebrado por periodo (comportamento historico),
+   *   agora tambem com a identidade do parceiro (codparc, codparc_matriz, is_matriz, cpfcnpj_matriz).
+   * - `granularidade` "total": 1 item por MATRIZ, ja consolidando os vinculados - aceita `cpfs[]`
+   *   (lote) ou `vendedora` sem cpf, trocando ~1 chamada por CPF por uma unica.
    *
    * Janela: periodo (dataIni/dataFim) > mes > ultimos `meses` (12).
    */
@@ -42,15 +57,15 @@ export class ClientesService {
       throw new BadRequestException('informe cpf, cpfs[] ou vendedora');
     }
 
-    // Lote = cpfs[] ou vendedora sem cpf; nos dois casos a resposta e 1 item por cliente.
+    // Lote = cpfs[] ou vendedora sem cpf; nos dois casos a resposta e 1 item por matriz.
     const emLote = cpfsLote.length > 0 || !cpfUnico;
     if (emLote && dto.granularidade && dto.granularidade !== 'total') {
       throw new BadRequestException(
-        'cpfs[] e vendedora sem cpf devolvem 1 item por cliente: use granularidade "total"',
+        'cpfs[] e vendedora sem cpf devolvem 1 item por matriz: use granularidade "total"',
       );
     }
     if (emLote || dto.granularidade === 'total') {
-      return this.totalPorCliente(dto, cpfUnico ? [...cpfsLote, cpfUnico] : cpfsLote);
+      return this.totalPorMatriz(dto, cpfUnico ? [...cpfsLote, cpfUnico] : cpfsLote);
     }
 
     const rows = await this.comprasPorMesRun(dto);
@@ -82,17 +97,21 @@ export class ClientesService {
   }
 
   /**
-   * granularidade "total": 1 item por cliente ({cpfcnpj, nome, telefone, vendedora_nome,
-   * codigovend, valor_total}) com o liquido do periodo inteiro. Uma unica ida ao banco
-   * para o lote todo - erp_pedidos/erp_trocas nao tem indice por doctoclie, entao varrer
-   * o periodo UMA vez para N clientes e o que substitui as N chamadas por CPF.
+   * granularidade "total": 1 item por MATRIZ, com os parceiros vinculados ja consolidados
+   * ({cpfcnpj, codparc, cpfcnpj_matriz, codparc_matriz, is_matriz, nome, telefone,
+   * vendedora_nome, codigovend, valor_total}). Dois CPFs da mesma matriz colapsam numa
+   * linha so - o valor nao se repete e somar a resposta nao conta em dobro.
    *
-   * `cpfs` vazio = modo vendedora (clientes de que ela e a dona hoje). Cada cliente soma a
-   * matriz inteira (todos os cadastros vinculados), igual a chamada por CPF; entao dois CPFs
-   * da mesma matriz repetem o mesmo valor_total - somar a resposta contaria em dobro.
-   * Cliente sem movimento no periodo tambem volta, com valor_total 0.
+   * Uma unica ida ao banco para o lote todo: erp_pedidos/erp_trocas nao tem indice por
+   * doctoclie, entao varrer o periodo UMA vez para N clientes e o que substitui as N
+   * chamadas por CPF. `cpfs` vazio = modo vendedora (clientes de que ela e a dona hoje).
+   *
+   * O grupo de cada matriz e o mesmo da consulta por CPF: os cadastros visiveis vinculados
+   * a ela MAIS os CPFs pedidos que caem nela (a rota por CPF sempre soma o CPF perguntado,
+   * mesmo oculto/sem cadastro) - por isso os valores batem com os da consulta individual.
+   * Matriz sem movimento no periodo tambem volta, com valor_total 0.
    */
-  private async totalPorCliente(dto: ClienteComprasDto, cpfs: string[]) {
+  private async totalPorMatriz(dto: ClienteComprasDto, cpfs: string[]) {
     const params: any[] = [];
     let entrada: string;
     if (cpfs.length > 0) {
@@ -111,58 +130,79 @@ export class ClientesService {
         ${entrada}
       ),
       alvo AS (
+        -- CPF pedido -> matriz dele (cpf_matriz = principal, ou ele mesmo quando nao ha cadastro visivel)
         SELECT DISTINCT ON (e.cpf_in)
                e.cpf_in,
-               c.clientes_cpf_cnpj_principal AS principal,
-               COALESCE(c.clientes_cpf_cnpj_principal, e.cpf_in) AS cpf_matriz,
+               NULLIF(c.clientes_cpf_cnpj_principal,'') AS principal,
+               lpad(regexp_replace(COALESCE(NULLIF(c.clientes_cpf_cnpj_principal,''), e.cpf_in),'[^0-9]','','g'),14,'0') AS cpf_matriz,
                btrim(c.clientes_nome) AS nome,
-               -- mesmo telefone de /clientes/ativos e /listas (celular, fallback fixo), mas
-               -- NULL em vez de " " quando o cliente nao tem nenhum dos dois.
-               CASE WHEN regexp_replace(COALESCE(c.clientes_telefone2,''),'[^0-9]','','g') ~ '[1-9]'
-                    THEN NULLIF(btrim(btrim(COALESCE(c.clientes_ddd2,'')) || ' ' || btrim(COALESCE(c.clientes_telefone2,''))), '')
-                    ELSE NULLIF(btrim(btrim(COALESCE(c.clientes_ddd1,'')) || ' ' || btrim(COALESCE(c.clientes_telefone1,''))), '')
-               END AS telefone
+               ${this.telefone('c')} AS telefone
         FROM entrada e
         LEFT JOIN erp_clientes_real c
                ON c.clientes_cpf_cnpj = e.cpf_in
-              AND COALESCE(c.clientes_id_situacao,-1) NOT IN (6,8,9,95)
+              AND ${this.sitOk('c')}
         ORDER BY e.cpf_in, c.clientes_id DESC NULLS LAST
       ),
       cadastros AS (
-        SELECT a.cpf_in, c.clientes_cpf_cnpj AS cad
+        -- vinculados visiveis da matriz + os proprios CPFs pedidos (UNION dedupa: nao conta 2x)
+        SELECT a.cpf_matriz, c.clientes_cpf_cnpj AS cad
         FROM alvo a
         JOIN erp_clientes_real c
-          ON c.clientes_cpf_cnpj_principal = a.principal
-         AND COALESCE(c.clientes_id_situacao,-1) NOT IN (6,8,9,95)
+          ON NULLIF(c.clientes_cpf_cnpj_principal,'') = a.principal
+         AND ${this.sitOk('c')}
         UNION
-        SELECT a.cpf_in, a.cpf_in FROM alvo a
+        SELECT a.cpf_matriz, a.cpf_in FROM alvo a
+      ),
+      matriz AS (
+        -- identidade da propria matriz (codparc/nome/telefone), quando ela tem cadastro visivel
+        SELECT DISTINCT ON (a.cpf_matriz)
+               a.cpf_matriz,
+               m.clientes_id AS codparc,
+               btrim(m.clientes_nome) AS nome,
+               ${this.telefone('m')} AS telefone
+        FROM alvo a
+        LEFT JOIN erp_clientes_real m
+               ON m.clientes_cpf_cnpj = a.cpf_matriz
+              AND ${this.sitOk('m')}
+        ORDER BY a.cpf_matriz, m.clientes_id DESC NULLS LAST
+      ),
+      rotulo AS (
+        -- matriz oculta: rotula pelo membro pedido que tem cadastro visivel (nunca expoe cliente oculto)
+        SELECT DISTINCT ON (cpf_matriz) cpf_matriz, nome, telefone
+        FROM alvo WHERE nome IS NOT NULL OR telefone IS NOT NULL
+        ORDER BY cpf_matriz, cpf_in
       ),
       mov AS (
-        SELECT c.cpf_in, COALESCE(p.totalgeral,0) AS valor
+        SELECT c.cpf_matriz, COALESCE(p.totalgeral,0) AS valor
         FROM cadastros c
         JOIN erp_pedidos p ON p.doctoclie = c.cad
         WHERE p.cancelado IS DISTINCT FROM 'S'
           AND ${janela}
         UNION ALL
-        SELECT c.cpf_in, -COALESCE(t.totalgeral,0)
+        SELECT c.cpf_matriz, -COALESCE(t.totalgeral,0)
         FROM cadastros c
         JOIN erp_trocas t ON t.doctoclie = c.cad
         WHERE COALESCE(t.cancelado,'N') = 'N'
           AND ${janela}
       ),
       soma AS (
-        SELECT cpf_in, SUM(valor) AS valor_total FROM mov GROUP BY cpf_in
+        SELECT cpf_matriz, SUM(valor) AS valor_total FROM mov GROUP BY cpf_matriz
       )
-      SELECT a.cpf_in AS cpfcnpj,
-             a.nome,
-             a.telefone,
+      SELECT m.cpf_matriz AS cpfcnpj,
+             m.codparc,
+             m.cpf_matriz AS cpfcnpj_matriz,
+             NULL::int AS codparc_matriz,
+             true AS is_matriz,
+             COALESCE(m.nome, r.nome) AS nome,
+             COALESCE(m.telefone, r.telefone) AS telefone,
              v.ven_nome AS vendedora_nome,
              v.codigovend,
              COALESCE(s.valor_total, 0)::numeric(14,2) AS valor_total
-      FROM alvo a
-      LEFT JOIN soma s ON s.cpf_in = a.cpf_in
-      LEFT JOIN vend v ON v.doc14 = a.cpf_matriz
-      ORDER BY a.cpf_in`;
+      FROM matriz m
+      LEFT JOIN rotulo r ON r.cpf_matriz = m.cpf_matriz
+      LEFT JOIN soma s ON s.cpf_matriz = m.cpf_matriz
+      LEFT JOIN vend v ON v.doc14 = m.cpf_matriz
+      ORDER BY m.cpf_matriz`;
     return this.prisma.$queryRawUnsafe<any[]>(sql, ...params);
   }
 
@@ -187,14 +227,17 @@ export class ClientesService {
 
     const sql = `
       WITH alvo AS (
-        SELECT clientes_cpf_cnpj_principal AS principal
+        SELECT clientes_cpf_cnpj_principal AS principal,
+               clientes_id AS codparc,
+               clientes_id_principal AS codparc_principal,
+               (clientes_id_principal IS NULL OR clientes_id = clientes_id_principal) AS is_matriz
         FROM erp_clientes_real
         WHERE regexp_replace(clientes_cpf_cnpj,'[^0-9]','','g') = lpad(regexp_replace($1,'[^0-9]','','g'),14,'0')
           AND COALESCE(clientes_id_situacao,-1) NOT IN (6,8,9,95)
         LIMIT 1
       ),
       matrizcpf AS (
-        SELECT lpad(regexp_replace(COALESCE((SELECT principal FROM alvo), $1),'[^0-9]','','g'),14,'0') AS cpf_matriz
+        SELECT lpad(regexp_replace(COALESCE(NULLIF((SELECT principal FROM alvo),''), $1),'[^0-9]','','g'),14,'0') AS cpf_matriz
       ),
       vendinfo AS (
         SELECT codigovend, ven_nome FROM ${this.VEND} v
@@ -221,6 +264,10 @@ export class ClientesService {
           AND ${dateCond}
       )
       SELECT ${label}, ROUND(SUM(valor),2) AS valor_total,
+             (SELECT codparc FROM alvo) AS codparc,
+             (SELECT cpf_matriz FROM matrizcpf) AS cpfcnpj_matriz,
+             CASE WHEN (SELECT is_matriz FROM alvo) THEN NULL ELSE (SELECT codparc_principal FROM alvo) END AS codparc_matriz,
+             COALESCE((SELECT is_matriz FROM alvo), true) AS is_matriz,
              (SELECT codigovend FROM vendinfo) AS codigovend,
              (SELECT ven_nome FROM vendinfo) AS vendedora_nome
       FROM mov

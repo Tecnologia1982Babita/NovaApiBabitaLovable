@@ -42,7 +42,7 @@ Body: `{ "usu_login": "JULIANA.FERREIRA", "usu_senha": "12345" }`
 ## Clientes
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/clientes/compras-mes` | Compra do cliente (líquido = vendas − trocas), somando vinculados (matriz). Um cpf por período **ou** lote com 1 item por cliente |
+| POST | `/clientes/compras-mes` | Compra do cliente (líquido = vendas − trocas), somando vinculados (matriz). Um cpf por período **ou** lote com 1 item por matriz |
 | GET | `/clientes/ativos` | Clientes ativos: compras líquidas ≥ R$1 nos últimos 6 meses-calendário fechados (mês corrente excluído); 1 linha por cliente (registro mais recente da janela) |
 
 ### POST `/clientes/compras-mes`
@@ -53,19 +53,32 @@ uma linha por mês/dia com `mes`/`dia`, `mes_ref`/`data_ref`, `valor_total`, `co
 `vendedora_nome`. Com `vendedora` junto, restringe aos cadastros dela (e, se isso não
 devolver nada, repete sem o filtro).
 
-**Em lote (`granularidade: "total"`)** — 1 item por cliente com o período somado:
-`cpfcnpj` (14 dígitos), `nome`, `telefone`, `vendedora_nome`, `codigovend`, `valor_total`.
+**Identidade do parceiro (nos dois formatos):** `codparc`, `cpfcnpj_matriz`, `codparc_matriz`
+(**null** quando o parceiro é a própria matriz) e `is_matriz`. Matriz = `clientes_id_principal`
+nulo ou igual a `clientes_id` (mesma definição de `/listas`). `codparc` é
+`erp_clientes_real.clientes_id`, igual ao de `/clientes/ativos` — ⚠️ cliente vindo do Sankhya
+tem `clientes_id = CODPARC + 1.000.000.000` (o legado do ERP fica abaixo disso), então **não é**
+o CODPARC cru do Sankhya que aparece em `adfashionstars`/corridas.
+
+**Em lote (`granularidade: "total"`)** — **1 item por matriz**, com os parceiros vinculados já
+consolidados: `cpfcnpj`, `codparc`, `cpfcnpj_matriz`, `codparc_matriz`, `is_matriz`, `nome`,
+`telefone`, `vendedora_nome`, `codigovend`, `valor_total`. A linha **é** a matriz, então
+`cpfcnpj` = `cpfcnpj_matriz`, `is_matriz` = `true` e `codparc_matriz` = `null`.
 Seleção dos clientes:
-- `cpfs: string[]` — até **500** por chamada (formato livre, duplicados unificados);
+- `cpfs: string[]` — até **500** por chamada (formato livre; duplicados **e CPFs da mesma matriz** colapsam);
 - `vendedora: number` **sem** cpf — todos os clientes de que ela é a dona hoje (`vendedora_proprietaria`).
 
-Uma chamada em lote substitui uma chamada por CPF (500 CPFs ≈ 0,7 s contra ≈ 136 s em 500
+Uma chamada em lote substitui uma chamada por CPF (500 CPFs ≈ 0,8 s contra ≈ 136 s em 500
 chamadas): `erp_pedidos`/`erp_trocas` não têm índice por `doctoclie`, então varrer a janela
-**uma vez** para N clientes é o que elimina as N varreduras.
+**uma vez** para N clientes é o que elimina as N varreduras. A consolidação encolhe a resposta
+de verdade — 500 CPFs → 488 matrizes; os 218 clientes da vendedora 213 → **139 matrizes**.
 
-⚠️ Cada cliente soma a **matriz inteira** (todos os cadastros vinculados), igual à consulta
-por CPF — dois CPFs da mesma matriz repetem o mesmo `valor_total`, então **somar a resposta
-contaria em dobro**. Cliente sem movimento na janela também volta, com `valor_total` `0`.
+O grupo de cada matriz é o mesmo da consulta por CPF (cadastros visíveis vinculados a ela **mais**
+os CPFs pedidos que caem nela — a consulta por CPF sempre soma o CPF perguntado, mesmo oculto),
+então **o valor de cada matriz bate com o que a consulta individual devolvia**; o que sai é a
+repetição. Matriz sem movimento na janela também volta, com `valor_total` `0`.
+Matriz sem cadastro visível (situação 6/8/9/95) vem com `codparc` `null` e é rotulada com o
+`nome`/`telefone` de um membro visível — nunca expõe o cadastro oculto.
 `cpfs[]`/`vendedora`-sem-cpf com `granularidade` `"mes"`/`"dia"` → 400.
 
 `GET /clientes/ativos` não recebe parâmetros. Fonte: `view_base_12meses` (agregação ao vivo,

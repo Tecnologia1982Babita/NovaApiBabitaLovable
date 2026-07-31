@@ -11,20 +11,24 @@ export class ClientesController {
   @Post('compras-mes')
   @HttpCode(200)
   @ApiOperation({
-    summary: 'Compra do cliente (liquido = vendas - trocas), somando vinculados (matriz). Aceita lote.',
+    summary: 'Compra do cliente (liquido = vendas - trocas). Por periodo (1 cpf) ou em lote consolidado por matriz.',
     description:
       'Um cpf com granularidade "mes" (default) ou "dia" volta uma linha por periodo. ' +
-      `Com granularidade "total" volta 1 item por cliente e aceita lote: cpfs[] (ate ${MAX_CPFS_LOTE}) ` +
-      'ou vendedora sem cpf (todos os clientes de que ela e a dona) - uma chamada no lugar de uma por CPF. ' +
-      'Cada cliente soma a matriz inteira (cadastros vinculados), igual a consulta por CPF: dois CPFs da ' +
-      'mesma matriz repetem o mesmo valor_total, entao somar a resposta contaria em dobro. ' +
-      'Cliente sem movimento no periodo tambem volta, com valor_total 0.',
+      `Com granularidade "total" volta 1 item por MATRIZ - os parceiros vinculados ja entram consolidados ` +
+      `numa linha so - e aceita lote: cpfs[] (ate ${MAX_CPFS_LOTE}) ou vendedora sem cpf (todos os clientes ` +
+      'de que ela e a dona), uma chamada no lugar de uma por CPF. CPFs da mesma matriz colapsam: ' +
+      'o valor nao se repete e somar a resposta nao conta em dobro. ' +
+      'Matriz sem movimento no periodo tambem volta, com valor_total 0. ' +
+      'codparc = erp_clientes_real.clientes_id (mesmo de /clientes/ativos; cliente vindo do Sankhya ' +
+      'tem clientes_id = CODPARC + 1.000.000.000, o legado do ERP fica abaixo disso).',
   })
   @ApiOkResponse({
     description:
-      'granularidade "mes"/"dia": mes (YYYY-MM) ou dia (YYYY-MM-DD), mes_ref/data_ref, valor_total, ' +
-      'codigovend, vendedora_nome. granularidade "total": cpfcnpj (14 digitos), nome, telefone, ' +
-      'vendedora_nome, codigovend, valor_total.',
+      'Identidade nos dois formatos: codparc, cpfcnpj_matriz, codparc_matriz (null quando o parceiro e a ' +
+      'propria matriz) e is_matriz. granularidade "mes"/"dia" acrescenta mes (YYYY-MM) ou dia (YYYY-MM-DD), ' +
+      'mes_ref/data_ref, valor_total, codigovend, vendedora_nome - a identidade e a do cpf consultado. ' +
+      'granularidade "total" acrescenta cpfcnpj, nome, telefone, vendedora_nome, codigovend, valor_total - ' +
+      'a linha E a matriz, entao cpfcnpj = cpfcnpj_matriz, is_matriz = true e codparc_matriz = null.',
   })
   comprasMes(@Body() body: ClienteComprasDto) {
     return this.service.comprasPorMes(body);
