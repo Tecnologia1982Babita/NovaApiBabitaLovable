@@ -42,8 +42,31 @@ Body: `{ "usu_login": "JULIANA.FERREIRA", "usu_senha": "12345" }`
 ## Clientes
 | Método | Rota | Descrição |
 |---|---|---|
-| POST | `/clientes/compras-mes` | Compra por mês do cliente (líquido = vendas − trocas), somando vinculados (matriz) |
+| POST | `/clientes/compras-mes` | Compra do cliente (líquido = vendas − trocas), somando vinculados (matriz). Um cpf por período **ou** lote com 1 item por cliente |
 | GET | `/clientes/ativos` | Clientes ativos: compras líquidas ≥ R$1 nos últimos 6 meses-calendário fechados (mês corrente excluído); 1 linha por cliente (registro mais recente da janela) |
+
+### POST `/clientes/compras-mes`
+Janela (mesma nos dois formatos): `dataIni`/`dataFim` > `mes` (YYYY-MM) > `meses` retroativos (default 12).
+
+**Por período (histórico)** — `granularidade` `"mes"` (default) ou `"dia"`, exige `cpf`:
+uma linha por mês/dia com `mes`/`dia`, `mes_ref`/`data_ref`, `valor_total`, `codigovend`,
+`vendedora_nome`. Com `vendedora` junto, restringe aos cadastros dela (e, se isso não
+devolver nada, repete sem o filtro).
+
+**Em lote (`granularidade: "total"`)** — 1 item por cliente com o período somado:
+`cpfcnpj` (14 dígitos), `nome`, `telefone`, `vendedora_nome`, `codigovend`, `valor_total`.
+Seleção dos clientes:
+- `cpfs: string[]` — até **500** por chamada (formato livre, duplicados unificados);
+- `vendedora: number` **sem** cpf — todos os clientes de que ela é a dona hoje (`vendedora_proprietaria`).
+
+Uma chamada em lote substitui uma chamada por CPF (500 CPFs ≈ 0,7 s contra ≈ 136 s em 500
+chamadas): `erp_pedidos`/`erp_trocas` não têm índice por `doctoclie`, então varrer a janela
+**uma vez** para N clientes é o que elimina as N varreduras.
+
+⚠️ Cada cliente soma a **matriz inteira** (todos os cadastros vinculados), igual à consulta
+por CPF — dois CPFs da mesma matriz repetem o mesmo `valor_total`, então **somar a resposta
+contaria em dobro**. Cliente sem movimento na janela também volta, com `valor_total` `0`.
+`cpfs[]`/`vendedora`-sem-cpf com `granularidade` `"mes"`/`"dia"` → 400.
 
 `GET /clientes/ativos` não recebe parâmetros. Fonte: `view_base_12meses` (agregação ao vivo,
 sem cache/job agendado). Campos: `codparc, nome, cpfcnpj, telefone, situacao, vendedora`.
