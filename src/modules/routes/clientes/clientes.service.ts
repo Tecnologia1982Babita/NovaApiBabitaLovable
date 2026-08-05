@@ -284,6 +284,16 @@ export class ClientesService {
    * Vendedora = vendedora_proprietaria (dona do cliente, mesmo padrao de /listas e
    * /clientes/compras-mes); so cai pra vendedora da ultima venda (view_base_12meses)
    * se o cliente nao tiver registro em vendedora_proprietaria (raro - fallback "ultimo caso").
+   *
+   * Identidade da MATRIZ em cada linha (is_matriz, codparc_matriz, cpfcnpj_matriz, nome_matriz,
+   * nascimento_matriz, matriz_oculta): vem do vinculo do proprio cadastro em erp_clientes_real
+   * (clientes_id_principal -> a linha da matriz), nao de heuristica por nome/telefone.
+   * Matriz nao tem principal, entao ela e a propria matriz: codparc_matriz = codparc e
+   * is_matriz = true (nunca null - a chave de agrupamento serve pros dois casos).
+   * nascimento_matriz e a data do cadastro da matriz: quando a matriz e CPF isso e o
+   * aniversario da pessoa fisica (que e o que as acoes de aniversario querem); quando a
+   * matriz e CNPJ e a data de abertura da empresa. matriz_oculta avisa que o cadastro da
+   * matriz esta em situacao oculta (6/8/9/95) - a linha continua sendo do cliente visivel.
    */
   async listarAtivos() {
     const sql = `
@@ -311,10 +321,19 @@ export class ClientesService {
              ELSE NULLIF(btrim(coalesce(ecr.clientes_ddd1,'')) || ' ' || btrim(coalesce(ecr.clientes_telefone1,'')), '')
         END AS telefone,
         r.situacao AS situacao,
-        COALESCE(btrim(vend.ven_nome), btrim(r.ven_nome)) AS vendedora
+        COALESCE(btrim(vend.ven_nome), btrim(r.ven_nome)) AS vendedora,
+        -- matriz: vinculo real do cadastro (clientes_id_principal); matriz e a propria matriz
+        (COALESCE(mtz.clientes_id, ecr.clientes_id, r.cod_cliente) = COALESCE(ecr.clientes_id, r.cod_cliente)) AS is_matriz,
+        COALESCE(mtz.clientes_id, ecr.clientes_id, r.cod_cliente) AS codparc_matriz,
+        COALESCE(mtz.clientes_cpf_cnpj, ecr.clientes_cpf_cnpj,
+                 lpad(regexp_replace(COALESCE(r.doc_cliente,''),'[^0-9]','','g'),14,'0')) AS cpfcnpj_matriz,
+        btrim(COALESCE(mtz.clientes_nome, ecr.clientes_nome, r.nome_cliente)) AS nome_matriz,
+        COALESCE(mtz.clientes_nascimento, ecr.clientes_nascimento) AS nascimento_matriz,
+        (COALESCE(mtz.clientes_id_situacao, ecr.clientes_id_situacao, -1) IN (6,8,9,95)) AS matriz_oculta
       FROM agregado a
       JOIN recente r ON r.cod_cliente = a.cod_cliente
       LEFT JOIN erp_clientes_real ecr ON ecr.clientes_id = r.cod_cliente
+      LEFT JOIN erp_clientes_real mtz ON mtz.clientes_id = ecr.clientes_id_principal
       LEFT JOIN ${this.VEND} vend ON vend.doc14 = regexp_replace(r.doc_cliente,'[^0-9]','','g')
       WHERE (r.situacao IS NULL OR r.situacao NOT IN (6,8,9,95))
       ORDER BY r.cod_cliente`;

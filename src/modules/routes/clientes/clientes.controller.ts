@@ -36,7 +36,17 @@ export class ClientesController {
 
   @Get('ativos')
   @ApiOperation({ summary: 'Clientes ativos: compras liquidas >= R$1 nos ultimos 6 meses-calendario fechados (mes corrente excluido). Oculta clientes situacao 6/8/9/95. Telefone = celular (clientes_telefone2), fallback fixo.' })
-  @ApiOkResponse({ description: 'codparc, nome, cpfcnpj, telefone, situacao, vendedora.' })
+  @ApiOkResponse({
+    description:
+      'codparc, nome, cpfcnpj, telefone, situacao, vendedora + a identidade da MATRIZ do cadastro: ' +
+      'is_matriz, codparc_matriz, cpfcnpj_matriz, nome_matriz, nascimento_matriz, matriz_oculta. ' +
+      'O vinculo vem do cadastro (erp_clientes_real.clientes_id_principal), nao de heuristica: ' +
+      'agrupar por codparc_matriz (ou cpfcnpj_matriz) da o grupo matriz+vinculados. ' +
+      'Quando a linha E a matriz, codparc_matriz = codparc e is_matriz = true (nunca null). ' +
+      'nascimento_matriz = data do cadastro da matriz: matriz CPF = aniversario da pessoa fisica; ' +
+      'matriz CNPJ = data de abertura da empresa (nao usar para aniversario). ' +
+      'matriz_oculta = true quando o cadastro da matriz esta em situacao oculta (6/8/9/95).',
+  })
   ativos() {
     return this.service.listarAtivos();
   }
