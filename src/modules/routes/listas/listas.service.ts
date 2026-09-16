@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/services/prisma.service';
 import { FiltroListaDto, SuperOfensivaFiltroDto } from './dto/listas-filtro.dto';
+import { foraPorCodigo } from 'src/modules/global/vendedoras-fora';
 
 /**
  * Listas Importantes das vendedoras. Selects validados read-only contra bd_think (jun/2026).
@@ -32,12 +33,15 @@ export class ListasService {
   )`;
 
   // cpf(14) -> vendedora dona (mais recente). Leve: so vendedora_proprietaria + erp_vendedores.
+  // Ignora quem saiu da empresa (VENDEDORAS_FORA): aqui nao ha venda na linha, entao o cliente
+  // dela fica com vendedora_nome nulo ate o rebuild de domingo dar uma dona nova.
   private readonly VEND = `(
     SELECT DISTINCT ON (doc14) doc14, codigovend, ven_nome FROM (
       SELECT regexp_replace(vp.doctoclie,'[^0-9]','','g') AS doc14,
              vp.codigovend, btrim(v.ven_nome) AS ven_nome, vp.dat_inc
       FROM vendedora_proprietaria vp
       LEFT JOIN erp_vendedores v ON v.ven_numero = vp.codigovend
+      WHERE ${foraPorCodigo('vp.codigovend')}
     ) z ORDER BY doc14, dat_inc DESC NULLS LAST
   )`;
 

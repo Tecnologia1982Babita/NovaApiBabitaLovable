@@ -35,7 +35,7 @@ export class ClientesController {
   }
 
   @Get('ativos')
-  @ApiOperation({ summary: 'Clientes ativos: compras liquidas >= R$1 nos ultimos 6 meses-calendario fechados (mes corrente excluido). Oculta clientes situacao 6/8/9/95. Telefone = celular (clientes_telefone2), fallback fixo.' })
+  @ApiOperation({ summary: 'Clientes ativos: compras liquidas >= R$1 nos ultimos 6 meses-calendario fechados (mes corrente excluido). Oculta clientes situacao 6/8/9/95. Telefone = celular (clientes_telefone2), fallback fixo. Vendedora desligada nao e atribuida: cai para a ultima vendedora ativa que atendeu o cliente na janela (nula se so a desligada o atendeu).' })
   @ApiOkResponse({
     description:
       'codparc, nome, cpfcnpj, telefone, situacao, vendedora + a identidade da MATRIZ do cadastro: ' +

@@ -1,18 +1,20 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/services/prisma.service';
 import { ClienteComprasDto } from './dto/cliente-compras.dto';
+import { foraPorCodigo, foraPorNome } from 'src/modules/global/vendedoras-fora';
 
 @Injectable()
 export class ClientesService {
   constructor(private readonly prisma: PrismaService) {}
 
-  // cpf(14) -> vendedora dona (mais recente).
+  // cpf(14) -> vendedora dona (mais recente). Ignora quem saiu da empresa (VENDEDORAS_FORA).
   private readonly VEND = `(
     SELECT DISTINCT ON (doc14) doc14, codigovend, ven_nome FROM (
       SELECT regexp_replace(vp.doctoclie,'[^0-9]','','g') AS doc14,
              vp.codigovend, btrim(v.ven_nome) AS ven_nome, vp.dat_inc
       FROM vendedora_proprietaria vp
       LEFT JOIN erp_vendedores v ON v.ven_numero = vp.codigovend
+      WHERE ${foraPorCodigo('vp.codigovend')}
     ) z ORDER BY doc14, dat_inc DESC NULLS LAST
   )`;
 
@@ -284,6 +286,9 @@ export class ClientesService {
    * Vendedora = vendedora_proprietaria (dona do cliente, mesmo padrao de /listas e
    * /clientes/compras-mes); so cai pra vendedora da ultima venda (view_base_12meses)
    * se o cliente nao tiver registro em vendedora_proprietaria (raro - fallback "ultimo caso").
+   * Vendedora que saiu da empresa (VENDEDORAS_FORA) nao aparece de nenhum dos dois lados: o
+   * cliente continua na lista, atribuido a ultima vendedora ATIVA que o atendeu na janela, e
+   * com vendedora nula quando so a desligada o atendeu.
    *
    * Identidade da MATRIZ em cada linha (is_matriz, codparc_matriz, cpfcnpj_matriz, nome_matriz,
    * nascimento_matriz, matriz_oculta): vem do vinculo do proprio cadastro em erp_clientes_real
@@ -311,6 +316,14 @@ export class ClientesService {
       recente AS (
         SELECT DISTINCT ON (cod_cliente) cod_cliente, nome_cliente, doc_cliente, situacao, ven_nome
         FROM janela ORDER BY cod_cliente, data DESC
+      ),
+      recente_vend AS (
+        -- ultima vendedora da janela ignorando as desligadas (so serve de fallback da atribuicao;
+        -- o filtro NAO entra em "agregado", para nao mexer no valor comprado nem em quem e ativo)
+        SELECT DISTINCT ON (cod_cliente) cod_cliente, ven_nome
+        FROM janela
+        WHERE ${foraPorNome('ven_nome')}
+        ORDER BY cod_cliente, data DESC
       )
       SELECT
         r.cod_cliente AS codparc,
@@ -321,7 +334,7 @@ export class ClientesService {
              ELSE NULLIF(btrim(coalesce(ecr.clientes_ddd1,'')) || ' ' || btrim(coalesce(ecr.clientes_telefone1,'')), '')
         END AS telefone,
         r.situacao AS situacao,
-        COALESCE(btrim(vend.ven_nome), btrim(r.ven_nome)) AS vendedora,
+        COALESCE(btrim(vend.ven_nome), btrim(rv.ven_nome)) AS vendedora,
         -- matriz: vinculo real do cadastro (clientes_id_principal); matriz e a propria matriz
         (COALESCE(mtz.clientes_id, ecr.clientes_id, r.cod_cliente) = COALESCE(ecr.clientes_id, r.cod_cliente)) AS is_matriz,
         COALESCE(mtz.clientes_id, ecr.clientes_id, r.cod_cliente) AS codparc_matriz,
@@ -332,6 +345,7 @@ export class ClientesService {
         (COALESCE(mtz.clientes_id_situacao, ecr.clientes_id_situacao, -1) IN (6,8,9,95)) AS matriz_oculta
       FROM agregado a
       JOIN recente r ON r.cod_cliente = a.cod_cliente
+      LEFT JOIN recente_vend rv ON rv.cod_cliente = r.cod_cliente
       LEFT JOIN erp_clientes_real ecr ON ecr.clientes_id = r.cod_cliente
       LEFT JOIN erp_clientes_real mtz ON mtz.clientes_id = ecr.clientes_id_principal
       LEFT JOIN ${this.VEND} vend ON vend.doc14 = regexp_replace(r.doc_cliente,'[^0-9]','','g')

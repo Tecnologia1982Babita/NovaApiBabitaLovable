@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { PrismaService } from 'src/services/prisma.service';
 import { FichaRiscoQueryDto } from './dto/ficha-risco-query.dto';
+import { foraPorCodigo, foraPorNome } from 'src/modules/global/vendedoras-fora';
 
 const VALOR_MINIMO = 3200;
 
@@ -9,12 +10,14 @@ export class FichaRiscoService {
   constructor(private readonly prisma: PrismaService) {}
 
   // cpf(14) -> vendedora dona (mais recente). Mesmo CTE de ClientesService/listas.
+  // Ignora quem saiu da empresa (VENDEDORAS_FORA).
   private readonly VEND = `(
     SELECT DISTINCT ON (doc14) doc14, codigovend, ven_nome FROM (
       SELECT regexp_replace(vp.doctoclie,'[^0-9]','','g') AS doc14,
              vp.codigovend, btrim(v.ven_nome) AS ven_nome, vp.dat_inc
       FROM vendedora_proprietaria vp
       LEFT JOIN erp_vendedores v ON v.ven_numero = vp.codigovend
+      WHERE ${foraPorCodigo('vp.codigovend')}
     ) z ORDER BY doc14, dat_inc DESC NULLS LAST
   )`;
 
@@ -78,11 +81,18 @@ export class FichaRiscoService {
       recente AS (
         SELECT DISTINCT ON (cod_cliente) cod_cliente, nome_cliente, doc_cliente, situacao, ven_nome, loja
         FROM janela ORDER BY cod_cliente, data DESC
+      ),
+      recente_vend AS (
+        -- ultima vendedora da janela ignorando as desligadas (so fallback da atribuicao)
+        SELECT DISTINCT ON (cod_cliente) cod_cliente, ven_nome
+        FROM janela
+        WHERE ${foraPorNome('ven_nome')}
+        ORDER BY cod_cliente, data DESC
       )
       SELECT
         f.cod_cliente AS codparc,
         btrim(r.nome_cliente) AS nome,
-        COALESCE(btrim(vend.ven_nome), btrim(r.ven_nome)) AS vendedora,
+        COALESCE(btrim(vend.ven_nome), btrim(rv.ven_nome)) AS vendedora,
         r.loja AS loja,
         (${VALOR_MINIMO} - f.meses_fechados) AS valor_necessario,
         COALESCE(rl.valor_realizado, 0) AS valor_realizado,
@@ -90,6 +100,7 @@ export class FichaRiscoService {
         COALESCE(c6.valor_comprado_6meses, 0) AS valor_comprado_6meses
       FROM fechados f
       JOIN recente r ON r.cod_cliente = f.cod_cliente
+      LEFT JOIN recente_vend rv ON rv.cod_cliente = f.cod_cliente
       LEFT JOIN realizado rl ON rl.cod_cliente = f.cod_cliente
       LEFT JOIN comprado6m c6 ON c6.cod_cliente = f.cod_cliente
       LEFT JOIN ${this.VEND} vend ON vend.doc14 = regexp_replace(r.doc_cliente,'[^0-9]','','g')
